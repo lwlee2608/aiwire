@@ -1,6 +1,6 @@
 module github.com/lwlee2608/aiwire
 
-go 1.26.1
+go 1.25
 
 require (
 	github.com/invopop/jsonschema v0.13.0
