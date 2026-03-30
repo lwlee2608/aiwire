@@ -67,6 +67,42 @@ type PostTool struct {
 
 type PostToolCallback func(PostTool)
 
+func (a *Agent) executeToolCall(
+	ctx context.Context,
+	toolCall openai.ChatCompletionMessageToolCallUnion,
+	toolsMap map[string]Tool,
+) (toolResult ToolResult, toolMsg openai.ChatCompletionMessageParamUnion) {
+	tool, ok := toolsMap[toolCall.Function.Name]
+	if !ok {
+		toolResult = &SimpleToolResult{
+			ToolContent: fmt.Sprintf("Tool %s not found", toolCall.Function.Name),
+		}
+		toolMsg = openai.ToolMessage(toolResult.Content(), toolCall.ID)
+		return
+	}
+
+	var args map[string]any
+	err := json.Unmarshal([]byte(toolCall.Function.Arguments), &args)
+	if err != nil {
+		toolResult = &SimpleToolResult{
+			ToolContent: fmt.Sprintf("Failed to unmarshal arguments for tool %s: %v", toolCall.Function.Name, err),
+			ToolError:   err,
+		}
+		toolMsg = openai.ToolMessage(toolResult.Content(), toolCall.ID)
+		return
+	}
+
+	toolResult, err = tool.Execute(ctx, args)
+	if err != nil {
+		toolResult = &SimpleToolResult{
+			ToolContent: fmt.Sprintf("Error executing tool %s: %v", toolCall.Function.Name, err),
+			ToolError:   err,
+		}
+	}
+	toolMsg = openai.ToolMessage(toolResult.Content(), toolCall.ID)
+	return
+}
+
 func addCompletionUsage(dst *openai.CompletionUsage, src openai.CompletionUsage) {
 	dst.PromptTokens += src.PromptTokens
 	dst.CompletionTokens += src.CompletionTokens
@@ -138,7 +174,6 @@ func (a *Agent) Execute(
 		}
 
 		for _, toolCall := range completion.Message.ToolCalls {
-
 			if preCallback != nil {
 				preCallback(PreTool{
 					Content: completion.Message.Content,
@@ -147,45 +182,13 @@ func (a *Agent) Execute(
 				})
 			}
 
-			tool, ok := toolsMap[toolCall.Function.Name]
-			if !ok {
-				toolResult := &SimpleToolResult{
-					ToolContent: fmt.Sprintf("Tool %s not found", toolCall.Function.Name),
-				}
-				messages = append(messages, openai.ToolMessage(toolResult.Content(), toolCall.ID))
-				toolCalls = append(toolCalls, toolCall)
-				toolResults = append(toolResults, toolResult)
-				continue
-			}
-
-			var args map[string]any
-			err := json.Unmarshal([]byte(toolCall.Function.Arguments), &args)
-			if err != nil {
-				toolResult := &SimpleToolResult{
-					ToolContent: fmt.Sprintf("Failed to unmarshal arguments for tool %s: %v", toolCall.Function.Name, err),
-					ToolError:   err,
-				}
-				messages = append(messages, openai.ToolMessage(toolResult.Content(), toolCall.ID))
-				toolCalls = append(toolCalls, toolCall)
-				toolResults = append(toolResults, toolResult)
-				continue
-			}
-
-			toolResult, err := tool.Execute(ctx, args)
-			if err != nil {
-				toolResult = &SimpleToolResult{
-					ToolContent: fmt.Sprintf("Error executing tool %s: %v", toolCall.Function.Name, err),
-					ToolError:   err,
-				}
-			}
+			toolResult, toolMsg := a.executeToolCall(ctx, toolCall, toolsMap)
 
 			if postCallback != nil {
-				postCallback(PostTool{
-					Result: toolResult,
-				})
+				postCallback(PostTool{Result: toolResult})
 			}
 
-			messages = append(messages, openai.ToolMessage(toolResult.Content(), toolCall.ID))
+			messages = append(messages, toolMsg)
 			toolCalls = append(toolCalls, toolCall)
 			toolResults = append(toolResults, toolResult)
 		}
@@ -311,7 +314,6 @@ func (a *Agent) ExecuteStream(
 
 		// Execute tool calls
 		for _, toolCall := range currentToolCalls {
-			// Pre-tool callback
 			if preCallback != nil {
 				preCallback(PreTool{
 					Content: currentContent,
@@ -320,42 +322,10 @@ func (a *Agent) ExecuteStream(
 				})
 			}
 
-			tool, ok := toolsMap[toolCall.Function.Name]
-			if !ok {
-				toolResult := &SimpleToolResult{
-					ToolContent: fmt.Sprintf("Tool %s not found", toolCall.Function.Name),
-				}
-				messages = append(messages, openai.ToolMessage(toolResult.Content(), toolCall.ID))
-				toolCalls = append(toolCalls, toolCall)
-				toolResults = append(toolResults, toolResult)
-				continue
-			}
-
-			var args map[string]any
-			err := json.Unmarshal([]byte(toolCall.Function.Arguments), &args)
-			if err != nil {
-				toolResult := &SimpleToolResult{
-					ToolContent: fmt.Sprintf("Failed to unmarshal arguments for tool %s: %v", toolCall.Function.Name, err),
-					ToolError:   err,
-				}
-				messages = append(messages, openai.ToolMessage(toolResult.Content(), toolCall.ID))
-				toolCalls = append(toolCalls, toolCall)
-				toolResults = append(toolResults, toolResult)
-				continue
-			}
-
-			toolResult, err := tool.Execute(ctx, args)
-			if err != nil {
-				toolResult = &SimpleToolResult{
-					ToolContent: fmt.Sprintf("Error executing tool %s: %v", toolCall.Function.Name, err),
-					ToolError:   err,
-				}
-			}
+			toolResult, toolMsg := a.executeToolCall(ctx, toolCall, toolsMap)
 
 			if postCallback != nil {
-				postCallback(PostTool{
-					Result: toolResult,
-				})
+				postCallback(PostTool{Result: toolResult})
 			}
 
 			// Stream the tool result
@@ -370,7 +340,7 @@ func (a *Agent) ExecuteStream(
 				},
 			})
 
-			messages = append(messages, openai.ToolMessage(toolResult.Content(), toolCall.ID))
+			messages = append(messages, toolMsg)
 			toolCalls = append(toolCalls, toolCall)
 			toolResults = append(toolResults, toolResult)
 		}
