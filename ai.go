@@ -1,3 +1,7 @@
+// Package aiwire provides a lightweight framework for building AI agents with
+// tool-calling support. It works with any OpenAI-compatible API and offers both
+// streaming and non-streaming completions, an agentic loop with automatic tool
+// execution, and token usage tracking across multi-step interactions.
 package aiwire
 
 import (
