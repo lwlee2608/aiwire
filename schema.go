@@ -1,4 +1,4 @@
-package ai
+package aiwire
 
 import "github.com/invopop/jsonschema"
 
