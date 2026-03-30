@@ -1,5 +1,8 @@
 # aiwire
 
+[![MIT License][mit-badge]][mit-url]
+[![Build Status][actions-badge]][actions-url]
+
 A Go library for building AI agents with tool-calling support. Works with any OpenAI-compatible API.
 
 ## Features
@@ -27,3 +30,8 @@ The library has three main components:
 ## License
 
 MIT
+
+[mit-badge]: https://img.shields.io/badge/license-MIT-blue.svg
+[mit-url]: LICENSE
+[actions-badge]: https://github.com/lwlee2608/aiwire/actions/workflows/ci.yml/badge.svg
+[actions-url]: https://github.com/lwlee2608/aiwire/actions/workflows/ci.yml
