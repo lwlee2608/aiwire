@@ -3,10 +3,13 @@ package aiwire
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/openai/openai-go/v3"
 )
+
+var ErrMaxStepsExceeded = errors.New("max steps exceeded")
 
 type ToolResult interface {
 	Content() string
@@ -203,7 +206,7 @@ func (a *Agent) Execute(
 		ToolCalls:   toolCalls,
 		ToolResults: toolResults,
 		Usage:       totalUsage,
-	}, nil
+	}, ErrMaxStepsExceeded
 }
 
 // ExecuteStream performs the agent loop with streaming support
@@ -361,5 +364,5 @@ func (a *Agent) ExecuteStream(
 		ToolCalls:   toolCalls,
 		ToolResults: toolResults,
 		Usage:       totalUsage,
-	}, nil
+	}, ErrMaxStepsExceeded
 }
