@@ -1,3 +1,5 @@
+//go:build openrouter
+
 package aiwire
 
 import (
@@ -32,8 +34,6 @@ func testCompletionOption() CompletionOption {
 }
 
 func TestAgent_Execute_OpenRouter(t *testing.T) {
-	t.Skip()
-
 	agent := newTestAgent(t)
 	messages := []openai.ChatCompletionMessageParamUnion{
 		openai.UserMessage("Hello, can you tell me a joke?"),
@@ -50,8 +50,6 @@ func TestAgent_Execute_OpenRouter(t *testing.T) {
 }
 
 func TestAgent_ExecuteStream_OpenRouter(t *testing.T) {
-	t.Skip()
-
 	agent := newTestAgent(t)
 	messages := []openai.ChatCompletionMessageParamUnion{
 		openai.UserMessage("Hello, can you tell me a short joke?"),
