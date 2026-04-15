@@ -21,7 +21,7 @@ func TestOpenAI_Completion_OpenRouter(t *testing.T) {
 	}
 
 	runCompletionTest(t, service, messages, CompletionOption{
-		Model:       "moonshotai/kimi-k2.5",
+		Model:       "z-ai/glm-4.7",
 		Temperature: 0.7,
 		Provider: &ProviderOption{
 			AllowFallbacks: true,
@@ -43,7 +43,7 @@ func TestOpenAI_Streaming_OpenRouter(t *testing.T) {
 	}
 
 	runStreamingTest(t, service, messages, CompletionOption{
-		Model:       "moonshotai/kimi-k2.5",
+		Model:       "z-ai/glm-4.7",
 		Temperature: 0.7,
 		Provider: &ProviderOption{
 			AllowFallbacks: true,
