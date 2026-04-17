@@ -3,9 +3,12 @@ package aiwire
 import (
 	"reflect"
 	"strings"
+	"time"
 
 	"github.com/openai/openai-go/v3/shared"
 )
+
+var timeType = reflect.TypeOf(time.Time{})
 
 func GenerateSchema[T any]() any {
 	var v T
@@ -23,6 +26,10 @@ func reflectSchema(t reflect.Type) map[string]any {
 	}
 	if t == nil {
 		return map[string]any{}
+	}
+
+	if t == timeType {
+		return map[string]any{"type": "string", "format": "date-time"}
 	}
 
 	switch t.Kind() {

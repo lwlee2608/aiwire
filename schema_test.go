@@ -3,6 +3,7 @@ package aiwire
 import (
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -75,6 +76,21 @@ func TestReflectSchema_Struct_NoJSONTagUsesFieldName(t *testing.T) {
 	props := got["properties"].(map[string]any)
 	_, ok := props["Value"]
 	assert.True(t, ok, "expected property keyed by Go field name when json tag is absent")
+}
+
+func TestReflectSchema_Time(t *testing.T) {
+	got := reflectSchema(reflect.TypeOf(time.Time{}))
+	assert.Equal(t, map[string]any{"type": "string", "format": "date-time"}, got)
+}
+
+func TestReflectSchema_TimeFieldInStruct(t *testing.T) {
+	type event struct {
+		At time.Time `json:"at" jsonschema:"required"`
+	}
+	got := reflectSchema(reflect.TypeOf(event{}))
+	at := got["properties"].(map[string]any)["at"].(map[string]any)
+	assert.Equal(t, "string", at["type"])
+	assert.Equal(t, "date-time", at["format"])
 }
 
 func TestReflectSchema_Struct_Nested(t *testing.T) {
