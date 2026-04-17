@@ -78,7 +78,7 @@ func TestAgent_Execute_ToolCall_OpenRouter(t *testing.T) {
 	agent := newTestAgent(t)
 	messages := []openai.ChatCompletionMessageParamUnion{
 		openai.SystemMessage("You must use the add tool to answer any arithmetic question."),
-		openai.UserMessage("What is 2 + 3?"),
+		openai.UserMessage("What is 17 + 28?"),
 	}
 
 	var preCalls []PreTool
@@ -93,8 +93,8 @@ func TestAgent_Execute_ToolCall_OpenRouter(t *testing.T) {
 	assert.GreaterOrEqual(t, len(result.ToolCalls), 1)
 	assert.Equal(t, "add", result.ToolCalls[0].Function.Name)
 	assert.Equal(t, len(result.ToolCalls), len(result.ToolResults))
-	assert.Equal(t, "5", result.ToolResults[0].Content())
-	assert.Contains(t, result.Content, "5")
+	assert.Equal(t, "45", result.ToolResults[0].Content())
+	assert.Contains(t, result.Content, "45")
 	assert.Equal(t, len(result.ToolCalls), len(preCalls))
 	assert.Equal(t, len(result.ToolCalls), len(postCalls))
 
