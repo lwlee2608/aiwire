@@ -4,7 +4,6 @@ package aiwire
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"testing"
@@ -13,13 +12,6 @@ import (
 	"github.com/openai/openai-go/v3/shared"
 	"github.com/stretchr/testify/assert"
 )
-
-func schemaFor[T any]() shared.FunctionParameters {
-	raw, _ := json.Marshal(GenerateSchema[T]())
-	var params shared.FunctionParameters
-	_ = json.Unmarshal(raw, &params)
-	return params
-}
 
 type addInput struct {
 	A float64 `json:"a" jsonschema:"required"`
@@ -32,7 +24,7 @@ func (t *addTool) Definition() openai.ChatCompletionToolUnionParam {
 	return openai.ChatCompletionFunctionTool(shared.FunctionDefinitionParam{
 		Name:        "add",
 		Description: openai.String("Add two integers"),
-		Parameters:  schemaFor[addInput](),
+		Parameters:  GenerateFunctionParameters[addInput](),
 	})
 }
 
