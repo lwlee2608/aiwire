@@ -12,15 +12,15 @@ var timeType = reflect.TypeOf(time.Time{})
 
 func GenerateSchema[T any]() any {
 	var v T
-	return reflectSchema(reflect.TypeOf(v))
+	return reflectSchema(reflect.TypeOf(v), map[reflect.Type]bool{})
 }
 
 func GenerateFunctionParameters[T any]() shared.FunctionParameters {
 	var v T
-	return reflectSchema(reflect.TypeOf(v))
+	return reflectSchema(reflect.TypeOf(v), map[reflect.Type]bool{})
 }
 
-func reflectSchema(t reflect.Type) map[string]any {
+func reflectSchema(t reflect.Type, visited map[reflect.Type]bool) map[string]any {
 	for t != nil && t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
@@ -43,16 +43,25 @@ func reflectSchema(t reflect.Type) map[string]any {
 	case reflect.Float32, reflect.Float64:
 		return map[string]any{"type": "number"}
 	case reflect.Slice, reflect.Array:
-		return map[string]any{"type": "array", "items": reflectSchema(t.Elem())}
+		// []byte encodes as base64 via encoding/json, not as an array of integers.
+		if t.Elem().Kind() == reflect.Uint8 {
+			return map[string]any{"type": "string", "contentEncoding": "base64"}
+		}
+		return map[string]any{"type": "array", "items": reflectSchema(t.Elem(), visited)}
 	case reflect.Map, reflect.Interface:
 		return map[string]any{"type": "object"}
 	case reflect.Struct:
-		return reflectStruct(t)
+		if visited[t] {
+			return map[string]any{"type": "object"}
+		}
+		visited[t] = true
+		defer delete(visited, t)
+		return reflectStruct(t, visited)
 	}
 	return map[string]any{}
 }
 
-func reflectStruct(t reflect.Type) map[string]any {
+func reflectStruct(t reflect.Type, visited map[reflect.Type]bool) map[string]any {
 	props := map[string]any{}
 	var required []string
 	addRequired := func(name string) {
@@ -72,7 +81,7 @@ func reflectStruct(t reflect.Type) map[string]any {
 			for ft.Kind() == reflect.Pointer {
 				ft = ft.Elem()
 			}
-			embedded := reflectStruct(ft)
+			embedded := reflectStruct(ft, visited)
 			for k, v := range embedded["properties"].(map[string]any) {
 				props[k] = v
 			}
@@ -92,7 +101,7 @@ func reflectStruct(t reflect.Type) map[string]any {
 		if name == "" {
 			continue
 		}
-		props[name] = reflectSchema(field.Type)
+		props[name] = reflectSchema(field.Type, visited)
 		if isRequired(field.Tag.Get("jsonschema")) {
 			addRequired(name)
 		}
@@ -108,6 +117,9 @@ func reflectStruct(t reflect.Type) map[string]any {
 	return schema
 }
 
+// Limitation: a struct that anonymously embeds time.Time (e.g. `struct { time.Time }`)
+// serializes via encoding/json as a single timestamp string, but this reflector will
+// emit it as an object with a nested "Time" property. Use a named field instead.
 func embeddedInlineable(field reflect.StructField) bool {
 	tagName, _, _ := strings.Cut(field.Tag.Get("json"), ",")
 	if tagName != "" {
