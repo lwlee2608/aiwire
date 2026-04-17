@@ -3,6 +3,7 @@ package aiwire
 import (
 	"reflect"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/openai/openai-go/v3/shared"
@@ -10,14 +11,26 @@ import (
 
 var timeType = reflect.TypeOf(time.Time{})
 
-func GenerateSchema[T any]() any {
+var schemaCache sync.Map // reflect.Type -> map[string]any
+
+// The returned map is shared across callers — do not mutate it.
+func cachedSchema[T any]() map[string]any {
 	var v T
-	return reflectSchema(reflect.TypeOf(v), map[reflect.Type]bool{})
+	t := reflect.TypeOf(v)
+	if s, ok := schemaCache.Load(t); ok {
+		return s.(map[string]any)
+	}
+	s := reflectSchema(t, map[reflect.Type]bool{})
+	schemaCache.Store(t, s)
+	return s
+}
+
+func GenerateSchema[T any]() any {
+	return cachedSchema[T]()
 }
 
 func GenerateFunctionParameters[T any]() shared.FunctionParameters {
-	var v T
-	return reflectSchema(reflect.TypeOf(v), map[reflect.Type]bool{})
+	return cachedSchema[T]()
 }
 
 func reflectSchema(t reflect.Type, visited map[reflect.Type]bool) map[string]any {
