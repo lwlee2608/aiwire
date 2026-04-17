@@ -20,6 +20,8 @@ type addInput struct {
 
 type addTool struct{}
 
+var _ Tool = (*addTool)(nil)
+
 func (t *addTool) Definition() openai.ChatCompletionToolUnionParam {
 	return openai.ChatCompletionFunctionTool(shared.FunctionDefinitionParam{
 		Name:        "add",
