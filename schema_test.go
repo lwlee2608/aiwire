@@ -106,6 +106,51 @@ func TestReflectSchema_Struct_Nested(t *testing.T) {
 	assert.Equal(t, []string{"x"}, child["required"])
 }
 
+func TestReflectSchema_EmbeddedStructInlined(t *testing.T) {
+	type base struct {
+		ID string `json:"id" jsonschema:"required"`
+	}
+	type child struct {
+		base
+		Name string `json:"name" jsonschema:"required"`
+	}
+	got := reflectSchema(reflect.TypeOf(child{}))
+	props := got["properties"].(map[string]any)
+	assert.Contains(t, props, "id")
+	assert.Contains(t, props, "name")
+	assert.NotContains(t, props, "base")
+	assert.ElementsMatch(t, []string{"id", "name"}, got["required"])
+}
+
+func TestReflectSchema_EmbeddedPointerStructInlined(t *testing.T) {
+	type base struct {
+		ID string `json:"id" jsonschema:"required"`
+	}
+	type child struct {
+		*base
+		Name string `json:"name"`
+	}
+	got := reflectSchema(reflect.TypeOf(child{}))
+	props := got["properties"].(map[string]any)
+	assert.Contains(t, props, "id")
+	assert.Contains(t, props, "name")
+}
+
+func TestReflectSchema_EmbeddedWithJSONTagNotInlined(t *testing.T) {
+	type Base struct {
+		ID string `json:"id"`
+	}
+	type child struct {
+		Base `json:"nested"`
+		Name string `json:"name"`
+	}
+	got := reflectSchema(reflect.TypeOf(child{}))
+	props := got["properties"].(map[string]any)
+	assert.Contains(t, props, "nested")
+	assert.Contains(t, props, "name")
+	assert.NotContains(t, props, "id")
+}
+
 func TestGenerateFunctionParameters(t *testing.T) {
 	type input struct {
 		A int `json:"a" jsonschema:"required"`

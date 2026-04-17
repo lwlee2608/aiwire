@@ -55,18 +55,46 @@ func reflectSchema(t reflect.Type) map[string]any {
 func reflectStruct(t reflect.Type) map[string]any {
 	props := map[string]any{}
 	var required []string
+	addRequired := func(name string) {
+		for _, existing := range required {
+			if existing == name {
+				return
+			}
+		}
+		required = append(required, name)
+	}
+
 	for i := 0; i < t.NumField(); i++ {
 		field := t.Field(i)
+
+		if field.Anonymous && embeddedInlineable(field) {
+			ft := field.Type
+			for ft.Kind() == reflect.Pointer {
+				ft = ft.Elem()
+			}
+			embedded := reflectStruct(ft)
+			for k, v := range embedded["properties"].(map[string]any) {
+				props[k] = v
+			}
+			if r, ok := embedded["required"].([]string); ok {
+				for _, k := range r {
+					addRequired(k)
+				}
+			}
+			continue
+		}
+
 		if !field.IsExported() {
 			continue
 		}
+
 		name := fieldName(field)
 		if name == "" {
 			continue
 		}
 		props[name] = reflectSchema(field.Type)
 		if isRequired(field.Tag.Get("jsonschema")) {
-			required = append(required, name)
+			addRequired(name)
 		}
 	}
 	schema := map[string]any{
@@ -78,6 +106,18 @@ func reflectStruct(t reflect.Type) map[string]any {
 		schema["required"] = required
 	}
 	return schema
+}
+
+func embeddedInlineable(field reflect.StructField) bool {
+	tagName, _, _ := strings.Cut(field.Tag.Get("json"), ",")
+	if tagName != "" {
+		return false
+	}
+	ft := field.Type
+	for ft.Kind() == reflect.Pointer {
+		ft = ft.Elem()
+	}
+	return ft.Kind() == reflect.Struct && ft != timeType
 }
 
 func fieldName(f reflect.StructField) string {
