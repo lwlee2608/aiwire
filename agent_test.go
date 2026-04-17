@@ -4,12 +4,37 @@ package aiwire
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"testing"
 
 	"github.com/openai/openai-go/v3"
+	"github.com/openai/openai-go/v3/shared"
 	"github.com/stretchr/testify/assert"
 )
+
+type addInput struct {
+	A int `json:"a" jsonschema:"required"`
+	B int `json:"b" jsonschema:"required"`
+}
+
+type addTool struct{}
+
+var _ Tool = (*addTool)(nil)
+
+func (t *addTool) Definition() openai.ChatCompletionToolUnionParam {
+	return openai.ChatCompletionFunctionTool(shared.FunctionDefinitionParam{
+		Name:        "add",
+		Description: openai.String("Add two integers"),
+		Parameters:  GenerateFunctionParameters[addInput](),
+	})
+}
+
+func (t *addTool) Execute(ctx context.Context, inputs map[string]any) (ToolResult, error) {
+	a := inputs["a"].(float64)
+	b := inputs["b"].(float64)
+	return &SimpleToolResult{ToolContent: fmt.Sprintf("%d", int(a)+int(b))}, nil
+}
 
 func newTestAgent(t *testing.T) *Agent {
 	apiKey := os.Getenv("OPENROUTER_API_KEY")
@@ -46,6 +71,36 @@ func TestAgent_Execute_OpenRouter(t *testing.T) {
 
 	t.Logf("Content: %s", result.Content)
 	t.Logf("Provider: %s", result.Provider)
+	logUsage(t, result.Usage)
+}
+
+func TestAgent_Execute_ToolCall_OpenRouter(t *testing.T) {
+	agent := newTestAgent(t)
+	messages := []openai.ChatCompletionMessageParamUnion{
+		openai.SystemMessage("You must use the add tool to answer any arithmetic question."),
+		openai.UserMessage("What is 17 + 28?"),
+	}
+
+	var preCalls []PreTool
+	var postCalls []PostTool
+	result, err := agent.Execute(context.Background(), messages, []Tool{&addTool{}},
+		testCompletionOption(),
+		func(p PreTool) { preCalls = append(preCalls, p) },
+		func(p PostTool) { postCalls = append(postCalls, p) },
+	)
+
+	assert.NoError(t, err)
+	assert.GreaterOrEqual(t, len(result.ToolCalls), 1)
+	assert.Equal(t, "add", result.ToolCalls[0].Function.Name)
+	assert.Equal(t, len(result.ToolCalls), len(result.ToolResults))
+	assert.Equal(t, "45", result.ToolResults[0].Content())
+	assert.Contains(t, result.Content, "45")
+	assert.Equal(t, len(result.ToolCalls), len(preCalls))
+	assert.Equal(t, len(result.ToolCalls), len(postCalls))
+
+	t.Logf("Content: %s", result.Content)
+	t.Logf("Provider: %s", result.Provider)
+	t.Logf("Tool call args: %s", result.ToolCalls[0].Function.Arguments)
 	logUsage(t, result.Usage)
 }
 
