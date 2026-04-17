@@ -14,8 +14,8 @@ import (
 )
 
 type addInput struct {
-	A float64 `json:"a" jsonschema:"required"`
-	B float64 `json:"b" jsonschema:"required"`
+	A int `json:"a" jsonschema:"required"`
+	B int `json:"b" jsonschema:"required"`
 }
 
 type addTool struct{}
@@ -33,7 +33,7 @@ func (t *addTool) Definition() openai.ChatCompletionToolUnionParam {
 func (t *addTool) Execute(ctx context.Context, inputs map[string]any) (ToolResult, error) {
 	a := inputs["a"].(float64)
 	b := inputs["b"].(float64)
-	return &SimpleToolResult{ToolContent: fmt.Sprintf("%d", int(a+b))}, nil
+	return &SimpleToolResult{ToolContent: fmt.Sprintf("%d", int(a)+int(b))}, nil
 }
 
 func newTestAgent(t *testing.T) *Agent {
