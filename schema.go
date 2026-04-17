@@ -105,7 +105,7 @@ func reflectStruct(t reflect.Type, visited map[reflect.Type]bool) map[string]any
 			continue
 		}
 		propSchema := reflectSchema(field.Type, visited)
-		required, enum := parseJSONSchemaTag(field.Tag.Get("jsonschema"))
+		isRequired, enum := parseJSONSchemaTag(field.Tag.Get("jsonschema"))
 		if len(enum) > 0 {
 			propSchema["enum"] = enum
 		}
@@ -113,7 +113,7 @@ func reflectStruct(t reflect.Type, visited map[reflect.Type]bool) map[string]any
 			propSchema["description"] = desc
 		}
 		props[name] = propSchema
-		if required {
+		if isRequired {
 			addRequired(name)
 		}
 	}
