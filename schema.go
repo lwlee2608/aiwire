@@ -104,8 +104,16 @@ func reflectStruct(t reflect.Type, visited map[reflect.Type]bool) map[string]any
 		if name == "" {
 			continue
 		}
-		props[name] = reflectSchema(field.Type, visited)
-		if isRequired(field.Tag.Get("jsonschema")) {
+		propSchema := reflectSchema(field.Type, visited)
+		required, enum := parseJSONSchemaTag(field.Tag.Get("jsonschema"))
+		if len(enum) > 0 {
+			propSchema["enum"] = enum
+		}
+		if desc := field.Tag.Get("jsonschema_description"); desc != "" {
+			propSchema["description"] = desc
+		}
+		props[name] = propSchema
+		if required {
 			addRequired(name)
 		}
 	}
@@ -150,11 +158,19 @@ func fieldName(f reflect.StructField) string {
 	return name
 }
 
-func isRequired(tag string) bool {
+func parseJSONSchemaTag(tag string) (required bool, enum []string) {
+	if tag == "" {
+		return
+	}
 	for _, part := range strings.Split(tag, ",") {
-		if strings.TrimSpace(part) == "required" {
-			return true
+		p := strings.TrimSpace(part)
+		if p == "required" {
+			required = true
+			continue
+		}
+		if v, ok := strings.CutPrefix(p, "enum="); ok {
+			enum = append(enum, v)
 		}
 	}
-	return false
+	return
 }

@@ -209,6 +209,26 @@ func TestReflectSchema_RepeatedSiblingTypeNotTreatedAsCycle(t *testing.T) {
 	assert.Contains(t, b, "properties")
 }
 
+func TestReflectSchema_Struct_DescriptionAndEnum(t *testing.T) {
+	type s struct {
+		Category string `json:"category" jsonschema_description:"Fact category" jsonschema:"required,enum=a,enum=b,enum=c"`
+		Note     string `json:"note" jsonschema_description:"freeform"`
+	}
+	got := mkSchema(reflect.TypeOf(s{}))
+	props := got["properties"].(map[string]any)
+
+	cat := props["category"].(map[string]any)
+	assert.Equal(t, "string", cat["type"])
+	assert.Equal(t, "Fact category", cat["description"])
+	assert.Equal(t, []string{"a", "b", "c"}, cat["enum"])
+
+	note := props["note"].(map[string]any)
+	assert.Equal(t, "freeform", note["description"])
+	assert.NotContains(t, note, "enum")
+
+	assert.Equal(t, []string{"category"}, got["required"])
+}
+
 func TestGenerateFunctionParameters(t *testing.T) {
 	type input struct {
 		A int `json:"a" jsonschema:"required"`
