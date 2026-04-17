@@ -158,6 +158,13 @@ func fieldName(f reflect.StructField) string {
 	return name
 }
 
+// parseJSONSchemaTag parses the `jsonschema:"..."` struct tag. Recognized entries:
+//   - "required"   — marks the field as required
+//   - "enum=<val>" — repeat per allowed value (e.g. `jsonschema:"enum=a,enum=b"`)
+//
+// Enum values are always returned as strings and emitted as-is into the schema,
+// so they are only well-formed for string-typed fields. Numeric or boolean enums
+// would need type coercion and are not supported.
 func parseJSONSchemaTag(tag string) (required bool, enum []string) {
 	if tag == "" {
 		return
