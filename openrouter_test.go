@@ -13,7 +13,6 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-
 func TestOpenAI_Completion_OpenRouter(t *testing.T) {
 	apiKey := os.Getenv("OPENROUTER_API_KEY")
 	assert.NotEmpty(t, apiKey)

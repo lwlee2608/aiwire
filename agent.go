@@ -65,6 +65,7 @@ type PreTool struct {
 type PreToolCallback func(PreTool)
 
 type PostTool struct {
+	Name   string     `json:"name"`
 	Result ToolResult `json:"result"`
 }
 
@@ -253,7 +254,7 @@ func (a *Agent) execute(
 			toolResult, toolMsg := a.executeToolCall(ctx, toolCall, toolsMap)
 
 			if postCallback != nil {
-				postCallback(PostTool{Result: toolResult})
+				postCallback(PostTool{Name: toolCall.Function.Name, Result: toolResult})
 			}
 
 			if streamCallback != nil {
