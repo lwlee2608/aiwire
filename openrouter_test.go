@@ -81,6 +81,26 @@ func TestOpenAI_ResponseFormat_OpenRouter(t *testing.T) {
 	logUsage(t, response.Usage)
 }
 
+func TestOpenAI_ProviderOrderIgnore_OpenRouter(t *testing.T) {
+	apiKey := os.Getenv("OPENROUTER_API_KEY")
+	assert.NotEmpty(t, apiKey)
+
+	service := NewOpenAIService(apiKey, "https://openrouter.ai/api/v1")
+	messages := []openai.ChatCompletionMessageParamUnion{
+		openai.UserMessage("Hello, can you tell me a joke?"),
+	}
+
+	runCompletionTest(t, service, messages, CompletionOption{
+		Model:       "z-ai/glm-4.7",
+		Temperature: 0.7,
+		Provider: &ProviderOption{
+			AllowFallbacks: true,
+			Order:          []string{"z-ai"},
+			Ignore:         []string{"novita"},
+		},
+	})
+}
+
 func TestOpenAI_Streaming_OpenRouter(t *testing.T) {
 	apiKey := os.Getenv("OPENROUTER_API_KEY")
 	assert.NotEmpty(t, apiKey)
