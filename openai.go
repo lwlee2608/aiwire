@@ -38,7 +38,9 @@ func buildRequestOptions(provider *ProviderOption, reasoning *ReasoningOption) [
 	if provider != nil {
 		providerMap := map[string]any{
 			"allow_fallbacks": provider.AllowFallbacks,
-			"data_collection": "deny",
+		}
+		if provider.DataCollection != "" {
+			providerMap["data_collection"] = provider.DataCollection
 		}
 		if provider.Sort != "" {
 			providerMap["sort"] = provider.Sort
