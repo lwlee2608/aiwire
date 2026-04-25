@@ -94,4 +94,10 @@ type Completion interface {
 		callback StreamCallback) error
 
 	Models(ctx context.Context) (*pagination.Page[openai.Model], error)
+
+	Embedding(ctx context.Context, input string, model string) ([]float32, error)
+}
+
+type Embedding interface {
+	Embedding(ctx context.Context, input string, model string) ([]float32, error)
 }
