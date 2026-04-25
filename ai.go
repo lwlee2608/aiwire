@@ -37,9 +37,19 @@ type ReasoningOption struct {
 	Exclude   bool
 }
 
+type ProviderDataCollection string
+
+const (
+	ProviderDataCollectionAllow ProviderDataCollection = "allow"
+	ProviderDataCollectionDeny  ProviderDataCollection = "deny"
+)
+
 type ProviderOption struct {
 	AllowFallbacks bool
+	DataCollection ProviderDataCollection
 	Sort           string
+	Order          []string
+	Ignore         []string
 }
 
 type CompletionResponse struct {
