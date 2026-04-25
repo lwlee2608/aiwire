@@ -36,12 +36,18 @@ func buildRequestOptions(provider *ProviderOption, reasoning *ReasoningOption) [
 	var opts []option.RequestOption
 
 	if provider != nil {
-		opts = append(opts, option.WithJSONSet("provider",
-			map[string]any{
-				"allow_fallbacks": provider.AllowFallbacks,
-				"data_collection": "deny",
-				"sort":            provider.Sort,
-			}))
+		providerMap := map[string]any{
+			"allow_fallbacks": provider.AllowFallbacks,
+			"data_collection": "deny",
+			"sort":            provider.Sort,
+		}
+		if len(provider.Order) > 0 {
+			providerMap["order"] = provider.Order
+		}
+		if len(provider.Ignore) > 0 {
+			providerMap["ignore"] = provider.Ignore
+		}
+		opts = append(opts, option.WithJSONSet("provider", providerMap))
 	}
 
 	if reasoning != nil {

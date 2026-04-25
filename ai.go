@@ -40,6 +40,8 @@ type ReasoningOption struct {
 type ProviderOption struct {
 	AllowFallbacks bool
 	Sort           string
+	Order          []string
+	Ignore         []string
 }
 
 type CompletionResponse struct {
