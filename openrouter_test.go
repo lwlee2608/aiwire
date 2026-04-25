@@ -81,7 +81,7 @@ func TestOpenAI_ResponseFormat_OpenRouter(t *testing.T) {
 	logUsage(t, response.Usage)
 }
 
-func TestOpenAI_ProviderSort_OpenRouter(t *testing.T) {
+func TestOpenAI_ProviderIgnore_OpenRouter(t *testing.T) {
 	apiKey := os.Getenv("OPENROUTER_API_KEY")
 	assert.NotEmpty(t, apiKey)
 
@@ -95,7 +95,32 @@ func TestOpenAI_ProviderSort_OpenRouter(t *testing.T) {
 		Temperature: 0.7,
 		Provider: &ProviderOption{
 			AllowFallbacks: true,
-			Sort:           "price",
+			Sort:           "latency",
+			Ignore:          []string{"together"},
+		},
+	})
+
+	assert.NoError(t, err)
+	assert.NotEmpty(t, response.Message.Content)
+	assert.NotEmpty(t, response.Provider)
+	t.Logf("Routed provider: %s", response.Provider)
+}
+
+func TestOpenAI_ProviderOrder_OpenRouter(t *testing.T) {
+	apiKey := os.Getenv("OPENROUTER_API_KEY")
+	assert.NotEmpty(t, apiKey)
+
+	service := NewOpenAIService(apiKey, "https://openrouter.ai/api/v1")
+	messages := []openai.ChatCompletionMessageParamUnion{
+		openai.UserMessage("Hello, can you tell me a joke?"),
+	}
+
+	response, err := service.Completions(context.Background(), messages, nil, CompletionOption{
+		Model:       "moonshotai/kimi-k2.6",
+		Temperature: 0.7,
+		Provider: &ProviderOption{
+			AllowFallbacks: true,
+			Order:           []string{"moonshotai/int4"},
 		},
 	})
 
