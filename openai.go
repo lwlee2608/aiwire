@@ -319,3 +319,27 @@ func (s *Service) CompletionsStream(
 func (s *Service) Models(ctx context.Context) (*pagination.Page[openai.Model], error) {
 	return s.client.Models.List(ctx)
 }
+
+func (s *Service) Embedding(ctx context.Context, input string, model string) ([]float32, error) {
+	embedding, err := s.client.Embeddings.New(ctx, openai.EmbeddingNewParams{
+		Model: openai.EmbeddingModel(model),
+		Input: openai.EmbeddingNewParamsInputUnion{
+			OfString: openai.String(input),
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	if len(embedding.Data) == 0 {
+		return nil, errors.New("no embedding data returned from OpenAI")
+	}
+
+	f64 := embedding.Data[0].Embedding
+	f32 := make([]float32, len(f64))
+	for i, v := range f64 {
+		f32[i] = float32(v)
+	}
+
+	return f32, nil
+}

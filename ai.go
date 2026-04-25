@@ -95,3 +95,7 @@ type Completion interface {
 
 	Models(ctx context.Context) (*pagination.Page[openai.Model], error)
 }
+
+type Embedding interface {
+	Embedding(ctx context.Context, input string, model string) ([]float32, error)
+}
