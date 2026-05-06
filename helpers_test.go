@@ -1,4 +1,4 @@
-//go:build openai || openrouter || zai
+//go:build openai || openrouter || zai || usage
 
 package aiwire
 
