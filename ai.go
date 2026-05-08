@@ -47,11 +47,12 @@ const (
 )
 
 type ProviderOption struct {
-	AllowFallbacks bool
-	DataCollection ProviderDataCollection
-	Sort           string
-	Order          []string
-	Ignore         []string
+	AllowFallbacks    bool
+	RequireParameters bool
+	DataCollection    ProviderDataCollection
+	Sort              string
+	Order             []string
+	Ignore            []string
 }
 
 type Usage struct {

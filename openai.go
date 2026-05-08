@@ -39,6 +39,9 @@ func buildRequestOptions(provider *ProviderOption, reasoning *ReasoningOption) [
 		providerMap := map[string]any{
 			"allow_fallbacks": provider.AllowFallbacks,
 		}
+		if provider.RequireParameters {
+			providerMap["require_parameters"] = true
+		}
 		if provider.DataCollection != "" {
 			providerMap["data_collection"] = provider.DataCollection
 		}
