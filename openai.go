@@ -163,8 +163,10 @@ func reasoningDetailFromRaw(item json.RawMessage) (ReasoningDetail, bool) {
 	}, true
 }
 
-// decodeJSONString best-effort unmarshals a JSON string; returns "" on any error.
-func decodeJSONString(raw json.RawMessage) string {
+// jsonStringOrEmpty best-effort unmarshals a JSON string; returns "" if raw is
+// empty, malformed, or not a string. Used for opaque fields where we'd rather
+// drop the value than fail the whole detail.
+func jsonStringOrEmpty(raw json.RawMessage) string {
 	if len(raw) == 0 {
 		return ""
 	}
@@ -173,10 +175,28 @@ func decodeJSONString(raw json.RawMessage) string {
 	return s
 }
 
+// jsonIntOrZero is the int companion to jsonStringOrEmpty.
+func jsonIntOrZero(raw json.RawMessage) int {
+	if len(raw) == 0 {
+		return 0
+	}
+	var n int
+	_ = json.Unmarshal(raw, &n)
+	return n
+}
+
+// reasoningSlot is one accumulating reasoning_detail. `text` streams in
+// fragments and is appended through a Builder; everything else is opaque and
+// last-write-wins.
+type reasoningSlot struct {
+	fields map[string]json.RawMessage
+	text   strings.Builder
+}
+
 // reasoningAccum accumulates streamed reasoning_details fragments by index slot.
-// Unknown wire fields ride along in the underlying map so they round-trip on replay.
+// Unknown wire fields ride along in fields so they round-trip on replay.
 type reasoningAccum struct {
-	slots map[int]map[string]json.RawMessage
+	slots map[int]*reasoningSlot
 	order []int
 }
 
@@ -196,24 +216,28 @@ func (a *reasoningAccum) merge(fragments []ReasoningDetail) {
 			idx = -(len(a.order) + 1)
 		}
 
-		existing, ok := a.slots[idx]
-		if !ok {
-			if a.slots == nil {
-				a.slots = make(map[int]map[string]json.RawMessage)
-			}
-			a.slots[idx] = fragMap
-			a.order = append(a.order, idx)
-			continue
-		}
+		slot := a.slot(idx)
 		for k, v := range fragMap {
-			// Only "text" streams in concat-able chunks; opaque fields (data, signature, ...) arrive whole.
 			if k == "text" {
-				existing[k] = concatJSONStrings(existing[k], v)
+				slot.text.WriteString(jsonStringOrEmpty(v))
 			} else {
-				existing[k] = v
+				slot.fields[k] = v
 			}
 		}
 	}
+}
+
+func (a *reasoningAccum) slot(idx int) *reasoningSlot {
+	if s, ok := a.slots[idx]; ok {
+		return s
+	}
+	if a.slots == nil {
+		a.slots = make(map[int]*reasoningSlot)
+	}
+	s := &reasoningSlot{fields: make(map[string]json.RawMessage)}
+	a.slots[idx] = s
+	a.order = append(a.order, idx)
+	return s
 }
 
 func (a *reasoningAccum) finalize() []ReasoningDetail {
@@ -222,31 +246,20 @@ func (a *reasoningAccum) finalize() []ReasoningDetail {
 	}
 	out := make([]ReasoningDetail, 0, len(a.slots))
 	for _, idx := range a.order {
-		m := a.slots[idx]
-		raw, err := json.Marshal(m)
+		s := a.slots[idx]
+		if s.text.Len() > 0 {
+			s.fields["text"], _ = json.Marshal(s.text.String())
+		}
+		raw, err := json.Marshal(s.fields)
 		if err != nil {
 			continue
 		}
 		out = append(out, ReasoningDetail{
-			Type:  decodeJSONString(m["type"]),
-			Index: decodeJSONInt(m["index"]),
+			Type:  jsonStringOrEmpty(s.fields["type"]),
+			Index: jsonIntOrZero(s.fields["index"]),
 			Raw:   raw,
 		})
 	}
-	return out
-}
-
-func decodeJSONInt(raw json.RawMessage) int {
-	if len(raw) == 0 {
-		return 0
-	}
-	var n int
-	_ = json.Unmarshal(raw, &n)
-	return n
-}
-
-func concatJSONStrings(a, b json.RawMessage) json.RawMessage {
-	out, _ := json.Marshal(decodeJSONString(a) + decodeJSONString(b))
 	return out
 }
 

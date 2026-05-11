@@ -107,7 +107,7 @@ type StreamChunk struct {
 // and slot keying; everything else lives in Raw and round-trips opaquely.
 type ReasoningDetail struct {
 	Type  string `json:"type,omitempty"`
-	Index int    `json:"index,omitempty"`
+	Index int    `json:"index"`
 
 	Raw json.RawMessage `json:"-"`
 }

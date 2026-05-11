@@ -128,7 +128,7 @@ func TestReasoningDetail_MarshalFallsBackToTypedFieldsWhenRawEmpty(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := `{"type":"reasoning.summary"}`
+	want := `{"type":"reasoning.summary","index":0}`
 	if string(bytes) != want {
 		t.Fatalf("got %s want %s", bytes, want)
 	}
