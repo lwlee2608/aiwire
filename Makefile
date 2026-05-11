@@ -1,7 +1,7 @@
 GO ?= $(shell which go 2>/dev/null)
 
 .PHONY: all help build clean test test-race vet fmt \
-	test-openai test-openrouter test-zai test-cerebras test-integration test-usage
+	test-openai test-openrouter test-zai test-cerebras test-integration test-usage test-reasoning
 
 all: clean build test
 
@@ -20,6 +20,7 @@ help:
 	@echo "  test-zai         Run integration tests against Z.ai         (needs ZAI_API_KEY)"
 	@echo "  test-cerebras    Run integration tests against Cerebras    (needs CEREBRAS_API_KEY)"
 	@echo "  test-usage       Run usage/cache-token tests                (needs OPENAI_API_KEY and OPENROUTER_API_KEY)"
+	@echo "  test-reasoning   Run reasoning integration tests           (needs OPENROUTER_API_KEY)"
 	@echo "  test-integration Run all integration tests"
 	@echo "  clean            Clear the Go test cache"
 
@@ -56,4 +57,7 @@ test-cerebras:
 test-usage:
 	$(GO) test -v -tags=integration -count=1 -run '^TestUsage_' ./integration/...
 
-test-integration: test-openai test-openrouter test-zai test-cerebras
+test-reasoning:
+	$(GO) test -v -tags=integration -count=1 -run '^TestReasoning_' ./integration/...
+
+test-integration: test-openai test-openrouter test-zai test-cerebras test-reasoning
