@@ -14,9 +14,8 @@ import (
 type reasoningCase struct {
 	model    string
 	provider *aiwire.ProviderOption
-	summary  string // optional reasoning.summary override (e.g. "detailed" for OpenAI gpt-5)
-	// unreliableReasoningText: provider returns reasoning text intermittently (e.g. OpenAI
-	// gpt-5 toggles between summary and encrypted-only modes); only reasoning_tokens is stable.
+	summary  string
+	// gpt-5 toggles between summary and encrypted-only modes; only reasoning_tokens is stable.
 	unreliableReasoningText bool
 }
 
@@ -148,7 +147,7 @@ func TestReasoning_OpenRouter_GPT55(t *testing.T) {
 	runReasoningSuite(t, reasoningCase{
 		model:                   "openai/gpt-5.5",
 		provider:                &aiwire.ProviderOption{Order: []string{"openai"}, AllowFallbacks: false},
-		summary:                 "detailed", // raises summary-emission probability; not deterministic
+		summary:                 "detailed",
 		unreliableReasoningText: true,
 	})
 }

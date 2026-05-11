@@ -37,10 +37,7 @@ type ReasoningOption struct {
 	Effort    ReasoningEffort
 	MaxTokens *int
 	Exclude   bool
-	// Summary controls reasoning summary verbosity for OpenAI gpt-5 family
-	// ("auto" | "concise" | "detailed"). "detailed" forces summary chunks to
-	// stream reliably; default behavior is intermittent.
-	Summary string
+	Summary   string // OpenAI gpt-5 reasoning summary verbosity: "auto" | "concise" | "detailed"
 }
 
 type ProviderDataCollection string
