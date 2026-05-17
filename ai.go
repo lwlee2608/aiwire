@@ -108,13 +108,12 @@ type Completion interface {
 	Models(ctx context.Context) (*pagination.Page[openai.Model], error)
 }
 
-// ResponsesOption configures a /v1/responses request. Stateless by default —
-// set PreviousResponseID to opt in to server-side conversation chaining.
 type ResponsesOption struct {
-	Model              string
-	Temperature        float64
-	MaxOutputTokens    *int
-	Instructions       string
+	Model           string
+	Temperature     float64
+	MaxOutputTokens *int
+	Instructions    string
+	// Honored by OpenAI; OpenRouter ignores it (Beta is stateless).
 	PreviousResponseID string
 	Store              *bool
 	Provider           *ProviderOption
@@ -136,6 +135,7 @@ type ResponsesStreamChunk struct {
 	Delta        string
 	Item         *responses.ResponseOutputItemUnion
 	ResponseID   string
+	Provider     string
 	FinishReason string
 	Done         bool
 	Usage        *Usage

@@ -42,8 +42,7 @@ func (r ReasoningDetail) MarshalJSON() ([]byte, error) {
 	return json.Marshal(alias(r))
 }
 
-// AssistantMessageWithReasoning builds an assistant message param with
-// reasoning_details attached for replay. Empty details yields a plain message.
+// Empty details yields a plain message.
 func AssistantMessageWithReasoning(
 	content string,
 	toolCalls []openai.ChatCompletionMessageToolCallUnion,

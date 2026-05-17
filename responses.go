@@ -112,13 +112,19 @@ func (s *Service) RespondStream(
 			responseID = ev.Response.ID
 		}
 
+		if p := extractStringFromExtraFields(ev.Response.JSON.ExtraFields, "provider", "provider_name"); p != "" {
+			routedProvider = p
+		}
+
 		chunk := ResponsesStreamChunk{
 			Type:       ev.Type,
 			Delta:      ev.Delta,
 			ResponseID: responseID,
+			Provider:   routedProvider,
 		}
 
-		if ev.Type == "response.output_item.done" || ev.Type == "response.output_item.added" {
+		// `added` carries an empty shell; only `done` has the completed item.
+		if ev.Type == "response.output_item.done" {
 			item := ev.Item
 			chunk.Item = &item
 		}
@@ -129,10 +135,6 @@ func (s *Service) RespondStream(
 				hasFinalUsage = true
 			}
 			chunk.FinishReason = string(ev.Response.Status)
-		}
-
-		if p := extractStringFromExtraFields(ev.Response.JSON.ExtraFields, "provider", "provider_name"); p != "" {
-			routedProvider = p
 		}
 
 		if err := callback(chunk); err != nil {
@@ -147,10 +149,10 @@ func (s *Service) RespondStream(
 	finalChunk := ResponsesStreamChunk{
 		Done:       true,
 		ResponseID: responseID,
+		Provider:   routedProvider,
 	}
 	if hasFinalUsage {
 		finalChunk.Usage = &finalUsage
 	}
-	_ = routedProvider // reserved for future per-chunk Provider plumbing
 	return callback(finalChunk)
 }
