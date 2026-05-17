@@ -65,13 +65,17 @@ func UsageFromResponses(u responses.ResponseUsage) Usage {
 		},
 	}
 
-	if v, ok := extraInt64(u.InputTokensDetails.JSON.ExtraFields, "cache_creation_tokens"); ok {
-		out.PromptTokensDetails.CacheCreationTokens = v
-	} else if v, ok := extraInt64(u.InputTokensDetails.JSON.ExtraFields, "cache_write_tokens"); ok {
-		out.PromptTokensDetails.CacheCreationTokens = v
-	}
+	cacheCreationSet := false
 	if v, ok := extraInt64(u.JSON.ExtraFields, "cache_creation_input_tokens"); ok {
 		out.PromptTokensDetails.CacheCreationTokens = v
+		cacheCreationSet = true
+	}
+	if !cacheCreationSet {
+		if v, ok := extraInt64(u.InputTokensDetails.JSON.ExtraFields, "cache_creation_tokens"); ok {
+			out.PromptTokensDetails.CacheCreationTokens = v
+		} else if v, ok := extraInt64(u.InputTokensDetails.JSON.ExtraFields, "cache_write_tokens"); ok {
+			out.PromptTokensDetails.CacheCreationTokens = v
+		}
 	}
 
 	if v, ok := extraFloat64(u.JSON.ExtraFields, "cache_discount"); ok {

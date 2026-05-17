@@ -131,14 +131,16 @@ type ResponsesResponse struct {
 }
 
 type ResponsesStreamChunk struct {
-	Type         string
-	Delta        string
-	Item         *responses.ResponseOutputItemUnion
-	ResponseID   string
-	Provider     string
-	FinishReason string
-	Done         bool
-	Usage        *Usage
+	Type        string
+	Delta       string
+	Item        *responses.ResponseOutputItemUnion
+	ItemID      string
+	OutputIndex int64
+	ResponseID  string
+	Provider    string
+	Status      string
+	Done        bool
+	Usage       *Usage
 }
 
 type ResponsesStreamCallback func(chunk ResponsesStreamChunk) error

@@ -2,6 +2,7 @@ package aiwire
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/openai/openai-go/v3/shared"
 )
 
+// OutputText concatenates every output_text fragment across the response items.
 func (r ResponsesResponse) OutputText() string {
 	var b strings.Builder
 	for _, item := range r.Output {
@@ -25,13 +27,13 @@ func (r ResponsesResponse) OutputText() string {
 
 func buildResponsesParams(input responses.ResponseInputParam, tools []responses.ToolUnionParam, opt ResponsesOption) responses.ResponseNewParams {
 	params := responses.ResponseNewParams{
-		Model: shared.ResponsesModel(opt.Model),
-		Input: responses.ResponseNewParamsInputUnion{OfInputItemList: input},
-		Text:  responses.ResponseTextConfigParam{Format: opt.ResponseFormat},
+		Model:       shared.ResponsesModel(opt.Model),
+		Input:       responses.ResponseNewParamsInputUnion{OfInputItemList: input},
+		Temperature: openai.Float(opt.Temperature),
 	}
 
-	if opt.Temperature != 0 {
-		params.Temperature = openai.Float(opt.Temperature)
+	if responseFormatSet(opt.ResponseFormat) {
+		params.Text = responses.ResponseTextConfigParam{Format: opt.ResponseFormat}
 	}
 	if opt.MaxOutputTokens != nil {
 		params.MaxOutputTokens = openai.Int(int64(*opt.MaxOutputTokens))
@@ -56,6 +58,10 @@ func buildResponsesParams(input responses.ResponseInputParam, tools []responses.
 		params.Tools = tools
 	}
 	return params
+}
+
+func responseFormatSet(f responses.ResponseFormatTextConfigUnionParam) bool {
+	return f.OfText != nil || f.OfJSONSchema != nil || f.OfJSONObject != nil
 }
 
 func (s *Service) Respond(
@@ -111,6 +117,7 @@ func (s *Service) RespondStream(
 		hasFinalUsage  bool
 		routedProvider string
 		headerChecked  bool
+		failureErr     error
 	)
 
 	for stream.Next() {
@@ -125,15 +132,19 @@ func (s *Service) RespondStream(
 			responseID = ev.Response.ID
 		}
 
-		if p := extractStringFromExtraFields(ev.Response.JSON.ExtraFields, "provider", "provider_name"); p != "" {
-			routedProvider = p
+		if routedProvider == "" {
+			if p := extractStringFromExtraFields(ev.Response.JSON.ExtraFields, "provider", "provider_name"); p != "" {
+				routedProvider = p
+			}
 		}
 
 		chunk := ResponsesStreamChunk{
-			Type:       ev.Type,
-			Delta:      ev.Delta,
-			ResponseID: responseID,
-			Provider:   routedProvider,
+			Type:        ev.Type,
+			Delta:       ev.Delta,
+			ItemID:      ev.ItemID,
+			OutputIndex: ev.OutputIndex,
+			ResponseID:  responseID,
+			Provider:    routedProvider,
 		}
 
 		// `added` carries an empty shell; only `done` has the completed item.
@@ -142,12 +153,22 @@ func (s *Service) RespondStream(
 			chunk.Item = &item
 		}
 
-		if ev.Type == "response.completed" || ev.Type == "response.incomplete" || ev.Type == "response.failed" {
+		switch ev.Type {
+		case "response.completed", "response.incomplete":
 			if ev.Response.JSON.Usage.Valid() {
 				finalUsage = UsageFromResponses(ev.Response.Usage)
 				hasFinalUsage = true
 			}
-			chunk.FinishReason = string(ev.Response.Status)
+			chunk.Status = string(ev.Response.Status)
+		case "response.failed":
+			if ev.Response.JSON.Usage.Valid() {
+				finalUsage = UsageFromResponses(ev.Response.Usage)
+				hasFinalUsage = true
+			}
+			chunk.Status = string(ev.Response.Status)
+			failureErr = fmt.Errorf("responses stream failed: status=%s", ev.Response.Status)
+		case "error":
+			failureErr = fmt.Errorf("responses stream error: code=%s message=%s", ev.Code, ev.Message)
 		}
 
 		if err := callback(chunk); err != nil {
@@ -157,6 +178,9 @@ func (s *Service) RespondStream(
 
 	if err := stream.Err(); err != nil {
 		return err
+	}
+	if failureErr != nil {
+		return failureErr
 	}
 
 	finalChunk := ResponsesStreamChunk{
