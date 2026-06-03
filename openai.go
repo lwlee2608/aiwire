@@ -118,6 +118,19 @@ func extractProviderFromHeader(response *http.Response) string {
 	return strings.TrimSpace(response.Header.Get("X-OpenRouter-Provider"))
 }
 
+// resolveRoutedProvider determines the upstream provider that served a request,
+// preferring the completion body, then the message, then the response header.
+func resolveRoutedProvider(completionExtra, messageExtra map[string]respjson.Field, response *http.Response) string {
+	provider := extractStringFromExtraFields(completionExtra, "provider", "provider_name")
+	if provider == "" {
+		provider = extractStringFromExtraFields(messageExtra, "provider", "provider_name")
+	}
+	if provider == "" {
+		provider = extractProviderFromHeader(response)
+	}
+	return provider
+}
+
 func extractReasoning(extraFields map[string]respjson.Field) string {
 	return extractStringFromExtraFields(extraFields, "reasoning", "reasoning_content")
 }
@@ -289,13 +302,7 @@ func (s *Service) ParamsCompletions(ctx context.Context, params openai.ChatCompl
 	reasoningContent := extractReasoning(message.JSON.ExtraFields)
 	reasoningDetails := extractReasoningDetails(message.JSON.ExtraFields)
 
-	routedProvider := extractStringFromExtraFields(completion.JSON.ExtraFields, "provider", "provider_name")
-	if routedProvider == "" {
-		routedProvider = extractStringFromExtraFields(message.JSON.ExtraFields, "provider", "provider_name")
-	}
-	if routedProvider == "" {
-		routedProvider = extractProviderFromHeader(response)
-	}
+	routedProvider := resolveRoutedProvider(completion.JSON.ExtraFields, message.JSON.ExtraFields, response)
 
 	return CompletionResponse{
 		Message:          message,
