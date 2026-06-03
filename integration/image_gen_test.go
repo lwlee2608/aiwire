@@ -7,6 +7,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/lwlee2608/aiwire"
@@ -14,7 +15,17 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const imageGenModel = "google/gemini-2.5-flash-image"
+var imageGenModels = []string{
+	"google/gemini-2.5-flash-image",
+	// "openai/gpt-5.4-image-2",
+	// "openai/gpt-5-image",
+	// "google/gemini-3.1-flash-image-preview",
+}
+
+// modelSlug turns a model id into a filesystem-safe name for saved images.
+func modelSlug(model string) string {
+	return strings.NewReplacer("/", "_", ":", "_").Replace(model)
+}
 
 // saveImage writes data to /tmp/<name>.<ext> and logs the path. ext falls back
 // to "bin" when the container is unrecognized.
@@ -47,50 +58,58 @@ func imageMagic(data []byte) string {
 func TestOpenRouter_ImageGeneration(t *testing.T) {
 	service := aiwire.NewOpenAIService(keyOrSkip(t, "OPENROUTER_API_KEY"), "https://openrouter.ai/api/v1")
 
-	resp, err := service.GenerateImage(context.Background(), aiwire.ImageOption{
-		Model:       imageGenModel,
-		Prompt:      "A simple solid red square on a white background.",
-		AspectRatio: "1:1",
-	})
-	require.NoError(t, err)
-	require.NotEmpty(t, resp.Images, "expected at least one generated image")
+	for _, model := range imageGenModels {
+		t.Run(model, func(t *testing.T) {
+			resp, err := service.GenerateImage(context.Background(), aiwire.ImageOption{
+				Model:       model,
+				Prompt:      "A simple solid red square on a white background.",
+				AspectRatio: "1:1",
+			})
+			require.NoError(t, err)
+			require.NotEmpty(t, resp.Images, "expected at least one generated image")
 
-	t.Logf("Text: %s", resp.Text)
-	t.Logf("Provider: %s", resp.Provider)
-	t.Logf("Images: %d", len(resp.Images))
-	logUsage(t, resp.Usage)
+			t.Logf("Text: %s", resp.Text)
+			t.Logf("Provider: %s", resp.Provider)
+			t.Logf("Images: %d", len(resp.Images))
+			logUsage(t, resp.Usage)
 
-	mime, data, err := resp.Images[0].Decode()
-	require.NoError(t, err)
-	assert.NotEmpty(t, data)
-	kind := imageMagic(data)
-	t.Logf("First image: mime=%s bytes=%d kind=%s", mime, len(data), kind)
-	assert.NotEmpty(t, kind, "decoded data should be a recognizable image")
-	saveImage(t, "aiwire_image_generation", kind, data)
+			mime, data, err := resp.Images[0].Decode()
+			require.NoError(t, err)
+			assert.NotEmpty(t, data)
+			kind := imageMagic(data)
+			t.Logf("First image: mime=%s bytes=%d kind=%s", mime, len(data), kind)
+			assert.NotEmpty(t, kind, "decoded data should be a recognizable image")
+			saveImage(t, "aiwire_image_generation_"+modelSlug(model), kind, data)
+		})
+	}
 }
 
 func TestOpenRouter_ImageEditing(t *testing.T) {
 	service := aiwire.NewOpenAIService(keyOrSkip(t, "OPENROUTER_API_KEY"), "https://openrouter.ai/api/v1")
 
-	// ocrBase64PNG is embedded in ocr_test.go (same package): a 300x80 PNG.
-	resp, err := service.GenerateImage(context.Background(), aiwire.ImageOption{
-		Model:  imageGenModel,
-		Prompt: "Add a bright yellow border around this image.",
-		Images: []aiwire.ImageInput{
-			aiwire.ImageInputFromBytes("image/png", ocrBase64PNG),
-		},
-	})
-	require.NoError(t, err)
-	require.NotEmpty(t, resp.Images, "expected at least one edited image")
+	for _, model := range imageGenModels {
+		t.Run(model, func(t *testing.T) {
+			// ocrBase64PNG is embedded in ocr_test.go (same package): a 300x80 PNG.
+			resp, err := service.GenerateImage(context.Background(), aiwire.ImageOption{
+				Model:  model,
+				Prompt: "Add a bright yellow border around this image.",
+				Images: []aiwire.ImageInput{
+					aiwire.ImageInputFromBytes("image/png", ocrBase64PNG),
+				},
+			})
+			require.NoError(t, err)
+			require.NotEmpty(t, resp.Images, "expected at least one edited image")
 
-	t.Logf("Provider: %s", resp.Provider)
-	logUsage(t, resp.Usage)
+			t.Logf("Provider: %s", resp.Provider)
+			logUsage(t, resp.Usage)
 
-	mime, data, err := resp.Images[0].Decode()
-	require.NoError(t, err)
-	assert.NotEmpty(t, data)
-	kind := imageMagic(data)
-	t.Logf("Edited image: mime=%s bytes=%d kind=%s", mime, len(data), kind)
-	assert.NotEmpty(t, kind, "decoded data should be a recognizable image")
-	saveImage(t, "aiwire_image_editing", kind, data)
+			mime, data, err := resp.Images[0].Decode()
+			require.NoError(t, err)
+			assert.NotEmpty(t, data)
+			kind := imageMagic(data)
+			t.Logf("Edited image: mime=%s bytes=%d kind=%s", mime, len(data), kind)
+			assert.NotEmpty(t, kind, "decoded data should be a recognizable image")
+			saveImage(t, "aiwire_image_editing_"+modelSlug(model), kind, data)
+		})
+	}
 }
