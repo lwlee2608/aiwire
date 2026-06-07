@@ -172,7 +172,7 @@ func parseJSONSchemaTag(tag string) (required bool, enum []string) {
 	if tag == "" {
 		return
 	}
-	for _, part := range strings.Split(tag, ",") {
+	for part := range strings.SplitSeq(tag, ",") {
 		p := strings.TrimSpace(part)
 		if p == "required" {
 			required = true
