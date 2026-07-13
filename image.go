@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
 	"net/url"
 	"strings"
@@ -23,18 +24,27 @@ type ImageGeneration interface {
 	GenerateImage(ctx context.Context, opt ImageOption) (ImageResponse, error)
 }
 
+// ImageEndpoint selects the API used for image generation.
+type ImageEndpoint string
+
+const (
+	ImageEndpointChatCompletions ImageEndpoint = "chat_completions"
+	ImageEndpointImages          ImageEndpoint = "images"
+)
+
 // ImageOption configures an image-generation request.
 type ImageOption struct {
-	Model       string
-	Prompt      string
-	Images      []ImageInput   // optional source images for editing or reference
-	AspectRatio string         // e.g. "16:9"; forwarded inside image_config
-	ConfigExtra map[string]any // extra image_config knobs, merged as-is
-	// Modalities sets the requested output modalities; defaults to
-	// ["image", "text"]. Use ["image"] for image-only models that reject text.
-	Modalities []string
-	// Provider holds OpenRouter-style routing; nil for other backends.
-	Provider *ProviderOption
+	Model        string
+	Prompt       string
+	Images       []ImageInput    // optional source images for editing or reference
+	Endpoint     ImageEndpoint   // defaults to chat_completions
+	AspectRatio  string          // e.g. "16:9"
+	Resolution   string          // e.g. "2K"; used by the images endpoint
+	Quality      string          // e.g. "high"; used by the images endpoint
+	OutputFormat string          // e.g. "png"; used by the images endpoint
+	ConfigExtra  map[string]any  // extra image_config or top-level images endpoint knobs
+	Modalities   []string        // defaults to ["image", "text"]; use ["image"] for image-only models
+	Provider     *ProviderOption // optional OpenRouter-style routing for chat_completions only
 }
 
 // ImageInput is a source image supplied for editing or as a reference.
@@ -89,10 +99,21 @@ func (g GeneratedImage) Decode() (mimeType string, data []byte, err error) {
 	return meta, []byte(decoded), nil
 }
 
-// GenerateImage implements [ImageGeneration] over an OpenAI-compatible
-// chat/completions endpoint (e.g. OpenRouter). It requests image output via
-// modalities and reads the generated images back from the assistant message.
+// GenerateImage implements [ImageGeneration]. The zero-value endpoint uses
+// chat/completions for compatibility; ImageEndpointImages uses OpenRouter's
+// dedicated /images API.
 func (s *Service) GenerateImage(ctx context.Context, opt ImageOption) (ImageResponse, error) {
+	switch opt.Endpoint {
+	case "", ImageEndpointChatCompletions:
+		return s.generateImageViaChatCompletions(ctx, opt)
+	case ImageEndpointImages:
+		return s.generateImageViaImages(ctx, opt)
+	default:
+		return ImageResponse{}, fmt.Errorf("aiwire: unsupported image endpoint %q", opt.Endpoint)
+	}
+}
+
+func (s *Service) generateImageViaChatCompletions(ctx context.Context, opt ImageOption) (ImageResponse, error) {
 	parts := make([]openai.ChatCompletionContentPartUnionParam, 0, 1+len(opt.Images))
 	if opt.Prompt != "" {
 		parts = append(parts, openai.TextContentPart(opt.Prompt))
@@ -140,14 +161,92 @@ func (s *Service) GenerateImage(ctx context.Context, opt ImageOption) (ImageResp
 	}, nil
 }
 
+func (s *Service) generateImageViaImages(ctx context.Context, opt ImageOption) (ImageResponse, error) {
+	if opt.Provider != nil {
+		return ImageResponse{}, errors.New("aiwire: ImageOption.Provider is unsupported by the images endpoint; use ConfigExtra[\"provider\"] for Images API provider options")
+	}
+
+	body := map[string]any{
+		"model":  opt.Model,
+		"prompt": opt.Prompt,
+	}
+	if len(opt.Images) > 0 {
+		references := make([]map[string]any, 0, len(opt.Images))
+		for _, image := range opt.Images {
+			references = append(references, map[string]any{
+				"type": "image_url",
+				"image_url": map[string]string{
+					"url": image.URL,
+				},
+			})
+		}
+		body["input_references"] = references
+	}
+
+	setImageParameter(body, "aspect_ratio", opt.AspectRatio)
+	setImageParameter(body, "resolution", opt.Resolution)
+	setImageParameter(body, "quality", opt.Quality)
+	setImageParameter(body, "output_format", opt.OutputFormat)
+	maps.Copy(body, opt.ConfigExtra)
+
+	var response *http.Response
+
+	var result struct {
+		Data []struct {
+			B64JSON   string `json:"b64_json"`
+			MediaType string `json:"media_type"`
+			URL       string `json:"url"`
+		} `json:"data"`
+		Provider     string                 `json:"provider"`
+		ProviderName string                 `json:"provider_name"`
+		Usage        openai.CompletionUsage `json:"usage"`
+	}
+	if err := s.client.Post(ctx, "images", body, &result, option.WithResponseInto(&response)); err != nil {
+		return ImageResponse{}, err
+	}
+
+	images := make([]GeneratedImage, 0, len(result.Data))
+	for _, image := range result.Data {
+		imageURL := image.URL
+		if imageURL == "" && image.B64JSON != "" {
+			mediaType := image.MediaType
+			if mediaType == "" {
+				mediaType = "application/octet-stream"
+			}
+			imageURL = "data:" + mediaType + ";base64," + image.B64JSON
+		}
+		if imageURL != "" {
+			images = append(images, GeneratedImage{Type: "image_url", URL: imageURL})
+		}
+	}
+
+	provider := strings.TrimSpace(result.Provider)
+	if provider == "" {
+		provider = strings.TrimSpace(result.ProviderName)
+	}
+	if provider == "" {
+		provider = extractProviderFromHeader(response)
+	}
+
+	return ImageResponse{
+		Images:   images,
+		Provider: provider,
+		Usage:    UsageFromOpenAI(result.Usage),
+	}, nil
+}
+
+func setImageParameter(body map[string]any, key, value string) {
+	if value != "" {
+		body[key] = value
+	}
+}
+
 func imageConfigMap(opt ImageOption) map[string]any {
 	m := map[string]any{}
 	if opt.AspectRatio != "" {
 		m["aspect_ratio"] = opt.AspectRatio
 	}
-	for k, v := range opt.ConfigExtra {
-		m[k] = v
-	}
+	maps.Copy(m, opt.ConfigExtra)
 	if len(m) == 0 {
 		return nil
 	}

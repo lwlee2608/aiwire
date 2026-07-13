@@ -21,10 +21,13 @@ import (
 type imageGenCase struct {
 	model      string
 	modalities []string
+	endpoint   aiwire.ImageEndpoint
 }
 
 var imageGenModels = []imageGenCase{
 	{model: "google/gemini-2.5-flash-image"},
+	{model: "openai/gpt-image-1-mini", endpoint: aiwire.ImageEndpointImages},
+	{model: "openai/gpt-image-2", endpoint: aiwire.ImageEndpointImages},
 	{model: "openai/gpt-5.4-image-2"},
 	{model: "openai/gpt-5-image"},
 	{model: "google/gemini-3.1-flash-image-preview"},
@@ -74,6 +77,7 @@ func TestOpenRouter_ImageGeneration(t *testing.T) {
 			resp, err := service.GenerateImage(context.Background(), aiwire.ImageOption{
 				Model:       tc.model,
 				Prompt:      "A Warhammer 40k Sister of Battle in ornate black and red power armor, wielding a flaming bolter, standing in a gothic cathedral lit by candlelight, dramatic cinematic lighting.",
+				Endpoint:    tc.endpoint,
 				AspectRatio: "1:1",
 				Modalities:  tc.modalities,
 			})
@@ -104,8 +108,9 @@ func TestOpenRouter_ImageEditing(t *testing.T) {
 			t.Parallel()
 			// ocrBase64PNG is embedded in ocr_test.go (same package): a 300x80 PNG.
 			resp, err := service.GenerateImage(context.Background(), aiwire.ImageOption{
-				Model:  tc.model,
-				Prompt: "Add a bright yellow border around this image.",
+				Model:    tc.model,
+				Prompt:   "Add a bright yellow border around this image.",
+				Endpoint: tc.endpoint,
 				Images: []aiwire.ImageInput{
 					aiwire.ImageInputFromBytes("image/png", ocrBase64PNG),
 				},
