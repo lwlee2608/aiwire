@@ -158,11 +158,11 @@ func (s *Service) pollVideo(ctx context.Context, jobID string, interval time.Dur
 				Provider: provider,
 				Usage:    UsageFromOpenAI(result.Usage),
 			}, nil
-		case "failed":
+		case "failed", "cancelled", "expired":
 			if result.Error != "" {
-				return VideoResponse{}, fmt.Errorf("aiwire: video generation failed: %s", result.Error)
+				return VideoResponse{}, fmt.Errorf("aiwire: video generation %s: %s", result.Status, result.Error)
 			}
-			return VideoResponse{}, errors.New("aiwire: video generation failed")
+			return VideoResponse{}, fmt.Errorf("aiwire: video generation %s", result.Status)
 		}
 
 		select {
