@@ -149,6 +149,9 @@ func (s *Service) pollVideo(ctx context.Context, jobID string, interval time.Dur
 					videos = append(videos, GeneratedVideo{URL: u})
 				}
 			}
+			if len(videos) == 0 {
+				return VideoResponse{}, errors.New("aiwire: completed video generation returned no video URLs")
+			}
 			provider := strings.TrimSpace(result.Provider)
 			if provider == "" {
 				provider = extractProviderFromHeader(response)

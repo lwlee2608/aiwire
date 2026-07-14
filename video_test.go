@@ -10,6 +10,31 @@ import (
 	"time"
 )
 
+func TestGenerateVideoReturnsErrorWhenCompletedWithoutVideos(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.Method {
+		case http.MethodPost:
+			_, _ = w.Write([]byte(`{"id":"job-1","status":"pending"}`))
+		case http.MethodGet:
+			_, _ = w.Write([]byte(`{"id":"job-1","status":"completed","unsigned_urls":[]}`))
+		}
+	}))
+	defer server.Close()
+
+	_, err := NewOpenAIService("test-key", server.URL).GenerateVideo(context.Background(), VideoOption{
+		Model:        "video-model",
+		Prompt:       "generate a video",
+		PollInterval: time.Millisecond,
+	})
+	if err == nil {
+		t.Fatal("GenerateVideo: expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "no video URLs") {
+		t.Errorf("error = %q, want missing video URL error", err)
+	}
+}
+
 func TestGenerateVideoReturnsTerminalJobErrors(t *testing.T) {
 	for _, status := range []string{"failed", "cancelled", "expired"} {
 		t.Run(status, func(t *testing.T) {
