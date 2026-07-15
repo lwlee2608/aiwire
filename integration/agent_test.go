@@ -44,7 +44,7 @@ func newTestAgent(t *testing.T) *aiwire.Agent {
 func testCompletionOption() aiwire.CompletionOption {
 	return aiwire.CompletionOption{
 		Model:       "moonshotai/kimi-k2.5",
-		Temperature: openai.Float(0.7),
+		Temperature: 0.7,
 		Provider: &aiwire.ProviderOption{
 			AllowFallbacks: true,
 			Sort:           "throughput",
@@ -149,7 +149,7 @@ func TestAgent_Execute_ReasoningReplay_GPT55(t *testing.T) {
 
 	option := aiwire.CompletionOption{
 		Model:       "openai/gpt-5.5",
-		Temperature: openai.Float(0.0),
+		Temperature: 0.0,
 		Provider:    &aiwire.ProviderOption{Order: []string{"openai"}, AllowFallbacks: false},
 		Reasoning: &aiwire.ReasoningOption{
 			Effort:  aiwire.ReasoningEffortHigh,

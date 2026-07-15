@@ -19,7 +19,7 @@ func TestOpenAI_Completion(t *testing.T) {
 
 	runCompletionTest(t, service, messages, aiwire.CompletionOption{
 		Model:       "gpt-4.1-nano",
-		Temperature: openai.Float(0.7),
+		Temperature: 0.7,
 	})
 }
 
@@ -62,6 +62,6 @@ func TestOpenAI_Streaming(t *testing.T) {
 
 	runStreamingTest(t, service, messages, aiwire.CompletionOption{
 		Model:       "gpt-4.1-nano",
-		Temperature: openai.Float(0.7),
+		Temperature: 0.7,
 	})
 }

@@ -41,7 +41,7 @@ type reasoningCase struct {
 func (c reasoningCase) opts(effort aiwire.ReasoningEffort, exclude bool) aiwire.CompletionOption {
 	return aiwire.CompletionOption{
 		Model:       c.model,
-		Temperature: openai.Float(0.0),
+		Temperature: 0.0,
 		Provider:    c.provider,
 		Reasoning: &aiwire.ReasoningOption{
 			Effort:  effort,

@@ -110,7 +110,7 @@ func TestOpenAI_OCR_Image(t *testing.T) {
 	service := aiwire.NewOpenAIService(keyOrSkip(t, "OPENAI_API_KEY"), "https://api.openai.com/v1")
 	runOCRImage(t, service, aiwire.CompletionOption{
 		Model:       "gpt-4.1-mini",
-		Temperature: openai.Float(0.0),
+		Temperature: 0.0,
 	})
 }
 
@@ -118,7 +118,7 @@ func TestOpenAI_OCR_ImageBase64(t *testing.T) {
 	service := aiwire.NewOpenAIService(keyOrSkip(t, "OPENAI_API_KEY"), "https://api.openai.com/v1")
 	runOCRImageBase64(t, service, aiwire.CompletionOption{
 		Model:       "gpt-4.1-mini",
-		Temperature: openai.Float(0.0),
+		Temperature: 0.0,
 	})
 }
 
@@ -126,7 +126,7 @@ func TestOpenAI_OCR_PDF(t *testing.T) {
 	service := aiwire.NewOpenAIService(keyOrSkip(t, "OPENAI_API_KEY"), "https://api.openai.com/v1")
 	runOCRPDF(t, service, aiwire.CompletionOption{
 		Model:       "gpt-4.1-mini",
-		Temperature: openai.Float(0.0),
+		Temperature: 0.0,
 	})
 }
 
@@ -134,7 +134,7 @@ func TestOpenRouter_OCR_Image(t *testing.T) {
 	service := aiwire.NewOpenAIService(keyOrSkip(t, "OPENROUTER_API_KEY"), "https://openrouter.ai/api/v1")
 	runOCRImage(t, service, aiwire.CompletionOption{
 		Model:       "z-ai/glm-5v-turbo",
-		Temperature: openai.Float(0.0),
+		Temperature: 0.0,
 	})
 }
 
@@ -142,7 +142,7 @@ func TestOpenRouter_OCR_ImageBase64(t *testing.T) {
 	service := aiwire.NewOpenAIService(keyOrSkip(t, "OPENROUTER_API_KEY"), "https://openrouter.ai/api/v1")
 	runOCRImageBase64(t, service, aiwire.CompletionOption{
 		Model:       "z-ai/glm-5v-turbo",
-		Temperature: openai.Float(0.0),
+		Temperature: 0.0,
 	})
 }
 
@@ -150,7 +150,7 @@ func TestOpenRouter_OCR_PDF(t *testing.T) {
 	service := aiwire.NewOpenAIService(keyOrSkip(t, "OPENROUTER_API_KEY"), "https://openrouter.ai/api/v1")
 	runOCRPDF(t, service, aiwire.CompletionOption{
 		Model:       "z-ai/glm-5v-turbo",
-		Temperature: openai.Float(0.0),
+		Temperature: 0.0,
 	})
 }
 

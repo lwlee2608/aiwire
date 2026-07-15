@@ -9,18 +9,18 @@ import (
 
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/packages/pagination"
-	"github.com/openai/openai-go/v3/packages/param"
 	"github.com/openai/openai-go/v3/responses"
 )
 
 // CompletionOption configures a chat completion request.
 type CompletionOption struct {
-	Model          string
-	Temperature    param.Opt[float64]
-	Provider       *ProviderOption
-	MaxTokens      *int
-	ResponseFormat openai.ChatCompletionNewParamsResponseFormatUnion
-	Reasoning      *ReasoningOption
+	Model           string
+	Temperature     float64
+	OmitTemperature bool
+	Provider        *ProviderOption
+	MaxTokens       *int
+	ResponseFormat  openai.ChatCompletionNewParamsResponseFormatUnion
+	Reasoning       *ReasoningOption
 }
 
 // ProviderDataCollection controls whether the upstream provider may retain request data.

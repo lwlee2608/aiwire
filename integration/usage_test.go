@@ -117,7 +117,7 @@ func (c usageCase) run(t *testing.T) {
 	t.Helper()
 	service := aiwire.NewOpenAIService(keyOrSkip(t, c.apiKeyEnv), c.baseURL)
 	messages := c.messages()
-	opts := aiwire.CompletionOption{Model: c.model, Temperature: openai.Float(0.0), Provider: c.provider}
+	opts := aiwire.CompletionOption{Model: c.model, Temperature: 0.0, Provider: c.provider}
 	ctx := context.Background()
 
 	first, err := service.Completions(ctx, messages, nil, opts)
@@ -141,7 +141,7 @@ func (c usageCase) runStream(t *testing.T) {
 	params := openai.ChatCompletionNewParams{
 		Messages:    c.messages(),
 		Model:       c.model,
-		Temperature: openai.Float(0.0),
+		Temperature: 0.0,
 		StreamOptions: openai.ChatCompletionStreamOptionsParam{
 			IncludeUsage: openai.Bool(true),
 		},

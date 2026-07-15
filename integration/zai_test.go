@@ -17,7 +17,7 @@ func TestZAI_Completion(t *testing.T) {
 
 	runCompletionTest(t, service, messages, aiwire.CompletionOption{
 		Model:       "glm-5.1",
-		Temperature: openai.Float(0.7),
+		Temperature: 0.7,
 	})
 }
 
@@ -29,6 +29,6 @@ func TestZAI_Streaming(t *testing.T) {
 
 	runStreamingTest(t, service, messages, aiwire.CompletionOption{
 		Model:       "glm-5.1",
-		Temperature: openai.Float(0.7),
+		Temperature: 0.7,
 	})
 }

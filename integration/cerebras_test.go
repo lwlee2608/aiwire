@@ -17,7 +17,7 @@ func TestCerebras_Completion(t *testing.T) {
 
 	runCompletionTest(t, service, messages, aiwire.CompletionOption{
 		Model:       "qwen-3-235b-a22b-instruct-2507",
-		Temperature: openai.Float(0.7),
+		Temperature: 0.7,
 	})
 }
 
@@ -29,6 +29,6 @@ func TestCerebras_Streaming(t *testing.T) {
 
 	runStreamingTest(t, service, messages, aiwire.CompletionOption{
 		Model:       "qwen-3-235b-a22b-instruct-2507",
-		Temperature: openai.Float(0.7),
+		Temperature: 0.7,
 	})
 }
