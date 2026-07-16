@@ -322,8 +322,11 @@ func (s *Service) Completions(
 	params := openai.ChatCompletionNewParams{
 		Messages:       messages,
 		Model:          option.Model,
-		Temperature:    openai.Float(option.Temperature),
 		ResponseFormat: option.ResponseFormat,
+	}
+
+	if !option.OmitTemperature {
+		params.Temperature = openai.Float(option.Temperature)
 	}
 
 	if option.MaxTokens != nil {
@@ -480,8 +483,11 @@ func (s *Service) CompletionsStream(
 	params := openai.ChatCompletionNewParams{
 		Messages:       messages,
 		Model:          option.Model,
-		Temperature:    openai.Float(option.Temperature),
 		ResponseFormat: option.ResponseFormat,
+	}
+
+	if !option.OmitTemperature {
+		params.Temperature = openai.Float(option.Temperature)
 	}
 
 	if option.MaxTokens != nil {

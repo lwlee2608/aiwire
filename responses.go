@@ -29,9 +29,12 @@ func (r ResponsesResponse) OutputText() string {
 
 func buildResponsesParams(input responses.ResponseInputParam, tools []responses.ToolUnionParam, opt ResponsesOption) responses.ResponseNewParams {
 	params := responses.ResponseNewParams{
-		Model:       shared.ResponsesModel(opt.Model),
-		Input:       responses.ResponseNewParamsInputUnion{OfInputItemList: input},
-		Temperature: openai.Float(opt.Temperature),
+		Model: shared.ResponsesModel(opt.Model),
+		Input: responses.ResponseNewParamsInputUnion{OfInputItemList: input},
+	}
+
+	if !opt.OmitTemperature {
+		params.Temperature = openai.Float(opt.Temperature)
 	}
 
 	if responseFormatSet(opt.ResponseFormat) {

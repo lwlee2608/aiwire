@@ -14,12 +14,13 @@ import (
 
 // CompletionOption configures a chat completion request.
 type CompletionOption struct {
-	Model          string
-	Temperature    float64
-	Provider       *ProviderOption
-	MaxTokens      *int
-	ResponseFormat openai.ChatCompletionNewParamsResponseFormatUnion
-	Reasoning      *ReasoningOption
+	Model           string
+	Temperature     float64
+	OmitTemperature bool
+	Provider        *ProviderOption
+	MaxTokens       *int
+	ResponseFormat  openai.ChatCompletionNewParamsResponseFormatUnion
+	Reasoning       *ReasoningOption
 }
 
 // ProviderDataCollection controls whether the upstream provider may retain request data.
@@ -123,6 +124,7 @@ type Completion interface {
 type ResponsesOption struct {
 	Model           string
 	Temperature     float64
+	OmitTemperature bool
 	MaxOutputTokens *int
 	Instructions    string
 	// Honored by OpenAI; OpenRouter ignores it (Beta is stateless).
