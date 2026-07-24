@@ -182,4 +182,5 @@ type Responses interface {
 
 type Embedding interface {
 	Embedding(ctx context.Context, input string, model string) ([]float32, error)
+	EmbeddingBatch(ctx context.Context, inputs []string, model string) ([][]float32, error)
 }
