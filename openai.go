@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -527,4 +528,37 @@ func (s *Service) Embedding(ctx context.Context, input string, model string) ([]
 	}
 
 	return f32, nil
+}
+
+func (s *Service) EmbeddingBatch(ctx context.Context, inputs []string, model string) ([][]float32, error) {
+	embedding, err := s.client.Embeddings.New(ctx, openai.EmbeddingNewParams{
+		Model: openai.EmbeddingModel(model),
+		Input: openai.EmbeddingNewParamsInputUnion{
+			OfArrayOfStrings: inputs,
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	if len(embedding.Data) != len(inputs) {
+		return nil, fmt.Errorf("expected %d embeddings, got %d", len(inputs), len(embedding.Data))
+	}
+
+	result := make([][]float32, len(embedding.Data))
+	for _, d := range embedding.Data {
+		if d.Index < 0 || int(d.Index) >= len(result) {
+			return nil, fmt.Errorf("embedding index %d out of range for %d inputs", d.Index, len(inputs))
+		}
+		if result[d.Index] != nil {
+			return nil, fmt.Errorf("duplicate embedding index %d", d.Index)
+		}
+		f32 := make([]float32, len(d.Embedding))
+		for i, v := range d.Embedding {
+			f32[i] = float32(v)
+		}
+		result[d.Index] = f32
+	}
+
+	return result, nil
 }
