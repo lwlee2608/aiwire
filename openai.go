@@ -547,6 +547,12 @@ func (s *Service) EmbeddingBatch(ctx context.Context, inputs []string, model str
 
 	result := make([][]float32, len(embedding.Data))
 	for _, d := range embedding.Data {
+		if d.Index < 0 || int(d.Index) >= len(result) {
+			return nil, fmt.Errorf("embedding index %d out of range for %d inputs", d.Index, len(inputs))
+		}
+		if result[d.Index] != nil {
+			return nil, fmt.Errorf("duplicate embedding index %d", d.Index)
+		}
 		f32 := make([]float32, len(d.Embedding))
 		for i, v := range d.Embedding {
 			f32[i] = float32(v)
