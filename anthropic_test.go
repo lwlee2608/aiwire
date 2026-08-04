@@ -39,7 +39,7 @@ func TestAnthropicMessages_SystemAndTurns(t *testing.T) {
 	assert.Equal(t, "hello", blockJSON(t, messages[0].Content[0])["text"])
 }
 
-// Parallel tool results arrive as separate OpenAI tool messages but must reach
+// Parallel tool results arrive as separate OpenAI messages but must reach
 // Anthropic as one user turn.
 func TestAnthropicMessages_MergesConsecutiveToolResults(t *testing.T) {
 	_, messages, err := anthropicMessages([]openai.ChatCompletionMessageParamUnion{
@@ -167,8 +167,8 @@ func TestAnthropicFinishReason(t *testing.T) {
 	assert.Equal(t, "something_new", anthropicFinishReason("something_new"))
 }
 
-// A tool taking no arguments streams no input_json_delta, which previously left
-// the arguments empty and unparseable by the agent loop.
+// A no-argument tool streams no input_json_delta, which previously left the
+// arguments empty and unparseable by the agent loop.
 func TestAnthropicStreamAccum_NoArgToolYieldsEmptyObject(t *testing.T) {
 	acc := anthropicStreamAccum{blocks: map[int64]*anthropicStreamBlock{}}
 	acc.start(0, anthropic.ContentBlockStartEventContentBlockUnion{

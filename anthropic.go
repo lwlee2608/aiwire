@@ -19,31 +19,29 @@ const anthropicDefaultMaxTokens = 4096
 
 const anthropicProvider = "anthropic"
 
-// reasoning_details entries follow OpenRouter's wire shape so they round-trip
-// through [AssistantMessageWithReasoning] like every other provider's.
+// OpenRouter's wire shape, so details round-trip through
+// [AssistantMessageWithReasoning] like every other provider's.
 const (
 	reasoningDetailTypeText      = "reasoning.text"
 	reasoningDetailTypeEncrypted = "reasoning.encrypted"
 )
 
-// AnthropicService is a client for Claude models backed by the Anthropic SDK.
-// It speaks the native Messages API while accepting and returning the
-// OpenAI-shaped types used by the rest of this package. Model listing is not
-// supported.
+// AnthropicService reaches Claude through the native Messages API, exchanging
+// the OpenAI-shaped types used elsewhere in this package. No model listing.
 type AnthropicService struct {
 	client anthropic.Client
 }
 
-// NewAnthropicService returns a service that reaches Claude through AWS Bedrock
-// in region, authenticated with a Bedrock API key (bearer token).
+// NewAnthropicService targets AWS Bedrock in region, authenticated with a
+// Bedrock API key (bearer token).
 func NewAnthropicService(apiKey string, region string) *AnthropicService {
 	cfg := aws.Config{
 		Region:                  region,
 		BearerAuthTokenProvider: bedrock.NewStaticBearerTokenProvider(apiKey),
 	}
 	return &AnthropicService{
-		// Without WithoutEnvironmentDefaults, a stray ANTHROPIC_API_KEY in the
-		// environment rides along as an X-Api-Key header on Bedrock requests.
+		// WithoutEnvironmentDefaults stops a stray ANTHROPIC_API_KEY from
+		// riding along as an X-Api-Key header.
 		client: anthropic.NewClient(
 			anthropicoption.WithoutEnvironmentDefaults(),
 			bedrock.WithConfig(cfg),
@@ -51,8 +49,7 @@ func NewAnthropicService(apiKey string, region string) *AnthropicService {
 	}
 }
 
-// NewAnthropicAPIService returns a service that reaches Claude through the
-// first-party Anthropic API.
+// NewAnthropicAPIService targets the first-party Anthropic API.
 func NewAnthropicAPIService(apiKey string) *AnthropicService {
 	return &AnthropicService{
 		client: anthropic.NewClient(anthropicoption.WithAPIKey(apiKey)),
@@ -232,8 +229,8 @@ func anthropicParams(
 		params.Thinking = anthropic.ThinkingConfigParamUnion{
 			OfEnabled: &anthropic.ThinkingConfigEnabledParam{BudgetTokens: budget},
 		}
-		// max_tokens must exceed the thinking budget, which the default alone
-		// does not guarantee. An explicit MaxTokens stays the caller's call.
+		// max_tokens must exceed the thinking budget; the default may not.
+		// An explicit MaxTokens is left alone.
 		if option.MaxTokens == nil && params.MaxTokens <= budget {
 			params.MaxTokens = budget + anthropicDefaultMaxTokens
 		}
@@ -254,8 +251,8 @@ func anthropicMessages(messages []openai.ChatCompletionMessageParamUnion) ([]ant
 		if len(blocks) == 0 {
 			return
 		}
-		// Anthropic models one turn per role, so consecutive same-role messages
-		// — parallel tool results especially — must merge into a single turn.
+		// One turn per role: consecutive same-role messages, parallel tool
+		// results especially, must merge.
 		if n := len(out); n > 0 && out[n-1].Role == role {
 			out[n-1].Content = append(out[n-1].Content, blocks...)
 			return
@@ -331,9 +328,9 @@ func anthropicAssistantBlocks(m openai.ChatCompletionAssistantMessageParam) ([]a
 	return blocks, nil
 }
 
-// anthropicThinkingBlocks recovers the thinking blocks stashed on an assistant
-// message by [AssistantMessageWithReasoning]. They must lead the turn and keep
-// their signature, or Anthropic rejects the follow-up request.
+// anthropicThinkingBlocks recovers thinking blocks stashed by
+// [AssistantMessageWithReasoning]. They must lead the turn and keep their
+// signature, or Anthropic rejects the follow-up.
 func anthropicThinkingBlocks(m openai.ChatCompletionAssistantMessageParam) []anthropic.ContentBlockParamUnion {
 	raw, err := m.MarshalJSON()
 	if err != nil {
@@ -367,8 +364,8 @@ func anthropicThinkingBlocks(m openai.ChatCompletionAssistantMessageParam) []ant
 }
 
 // anthropicTextContent flattens an OpenAI message content union. Every variant
-// marshals to either a JSON string or an array of content parts, so decoding
-// the marshaled form covers them all without a switch per message type.
+// marshals to a JSON string or an array of content parts, so decoding the
+// marshaled form covers all of them.
 func anthropicTextContent(content json.Marshaler) (string, error) {
 	raw, err := content.MarshalJSON()
 	if err != nil {
@@ -533,8 +530,8 @@ func (a *anthropicStreamAccum) toolCalls() []openai.ChatCompletionMessageToolCal
 			continue
 		}
 		snapshot := *call
-		// A tool taking no arguments streams no input_json_delta at all, which
-		// would otherwise surface as unparseable empty arguments.
+		// A no-argument tool streams no input_json_delta, which would
+		// otherwise surface as unparseable empty arguments.
 		if snapshot.Function.Arguments == "" {
 			snapshot.Function.Arguments = "{}"
 		}
