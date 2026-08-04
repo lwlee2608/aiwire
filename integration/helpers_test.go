@@ -35,7 +35,7 @@ func logUsage(t *testing.T, u aiwire.Usage) {
 	)
 }
 
-func runCompletionTest(t *testing.T, service *aiwire.Service, messages []openai.ChatCompletionMessageParamUnion, opts aiwire.CompletionOption) {
+func runCompletionTest(t *testing.T, service aiwire.Completion, messages []openai.ChatCompletionMessageParamUnion, opts aiwire.CompletionOption) {
 	t.Helper()
 	ctx := context.Background()
 	response, err := service.Completions(ctx, messages, nil, opts)
@@ -48,7 +48,7 @@ func runCompletionTest(t *testing.T, service *aiwire.Service, messages []openai.
 	logUsage(t, response.Usage)
 }
 
-func runStreamingTest(t *testing.T, service *aiwire.Service, messages []openai.ChatCompletionMessageParamUnion, opts aiwire.CompletionOption) {
+func runStreamingTest(t *testing.T, service aiwire.Completion, messages []openai.ChatCompletionMessageParamUnion, opts aiwire.CompletionOption) {
 	t.Helper()
 	ctx := context.Background()
 	var fullContent string
