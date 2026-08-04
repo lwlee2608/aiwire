@@ -124,6 +124,7 @@ func (s *AnthropicService) CompletionsStream(
 
 	acc := anthropicStreamAccum{blocks: map[int64]*anthropicStreamBlock{}}
 	var usage Usage
+	var inputTokens int64
 
 	for stream.Next() {
 		event := stream.Current()
@@ -133,6 +134,7 @@ func (s *AnthropicService) CompletionsStream(
 		case "message_start":
 			chunk.Role = "assistant"
 			usage = anthropicUsage(event.Message.Usage)
+			inputTokens = event.Message.Usage.InputTokens
 		case "content_block_start":
 			acc.start(event.Index, event.ContentBlock)
 			if event.ContentBlock.Type == "tool_use" {
@@ -162,7 +164,7 @@ func (s *AnthropicService) CompletionsStream(
 			chunk.FinishReason = anthropicFinishReason(string(event.Delta.StopReason))
 			usage.CompletionTokens = event.Usage.OutputTokens
 			if event.Usage.InputTokens > 0 {
-				usage.PromptTokens = event.Usage.InputTokens
+				inputTokens = event.Usage.InputTokens
 			}
 			if event.Usage.CacheReadInputTokens > 0 {
 				usage.PromptTokensDetails.CachedTokens = event.Usage.CacheReadInputTokens
@@ -171,6 +173,11 @@ func (s *AnthropicService) CompletionsStream(
 				usage.PromptTokensDetails.CacheCreationTokens = event.Usage.CacheCreationInputTokens
 			}
 			usage.CompletionTokensDetails.ReasoningTokens = event.Usage.OutputTokensDetails.ThinkingTokens
+			usage.PromptTokens = anthropicPromptTokens(
+				inputTokens,
+				usage.PromptTokensDetails.CachedTokens,
+				usage.PromptTokensDetails.CacheCreationTokens,
+			)
 			usage.TotalTokens = usage.PromptTokens + usage.CompletionTokens
 		}
 
@@ -467,10 +474,11 @@ func anthropicReasoningEncrypted(index int, data string) ReasoningDetail {
 }
 
 func anthropicUsage(u anthropic.Usage) Usage {
+	prompt := anthropicPromptTokens(u.InputTokens, u.CacheReadInputTokens, u.CacheCreationInputTokens)
 	return Usage{
-		PromptTokens:     u.InputTokens,
+		PromptTokens:     prompt,
 		CompletionTokens: u.OutputTokens,
-		TotalTokens:      u.InputTokens + u.OutputTokens,
+		TotalTokens:      prompt + u.OutputTokens,
 		PromptTokensDetails: PromptTokensDetails{
 			CachedTokens:        u.CacheReadInputTokens,
 			CacheCreationTokens: u.CacheCreationInputTokens,
@@ -479,6 +487,12 @@ func anthropicUsage(u anthropic.Usage) Usage {
 			ReasoningTokens: u.OutputTokensDetails.ThinkingTokens,
 		},
 	}
+}
+
+// Anthropic reports input_tokens exclusive of cache hits and writes, while the
+// normalized PromptTokens is inclusive like OpenAI's prompt_tokens.
+func anthropicPromptTokens(input, cacheRead, cacheCreation int64) int64 {
+	return input + cacheRead + cacheCreation
 }
 
 func anthropicFinishReason(stopReason string) string {

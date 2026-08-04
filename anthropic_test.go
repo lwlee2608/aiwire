@@ -271,3 +271,25 @@ func TestAnthropicParams_ThinkingBudget(t *testing.T) {
 		assert.Nil(t, params.Thinking.OfEnabled)
 	})
 }
+
+func TestAnthropicUsage_CountsCacheTokens(t *testing.T) {
+	usage := anthropicUsage(anthropic.Usage{
+		InputTokens:              10,
+		OutputTokens:             5,
+		CacheReadInputTokens:     100,
+		CacheCreationInputTokens: 20,
+	})
+
+	assert.Equal(t, int64(130), usage.PromptTokens)
+	assert.Equal(t, int64(5), usage.CompletionTokens)
+	assert.Equal(t, int64(135), usage.TotalTokens)
+	assert.Equal(t, int64(100), usage.PromptTokensDetails.CachedTokens)
+	assert.Equal(t, int64(20), usage.PromptTokensDetails.CacheCreationTokens)
+}
+
+func TestAnthropicUsage_NoCacheTokens(t *testing.T) {
+	usage := anthropicUsage(anthropic.Usage{InputTokens: 10, OutputTokens: 5})
+
+	assert.Equal(t, int64(10), usage.PromptTokens)
+	assert.Equal(t, int64(15), usage.TotalTokens)
+}
