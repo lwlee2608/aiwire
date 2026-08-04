@@ -228,10 +228,14 @@ func anthropicParams(
 		params.MaxTokens = int64(*option.MaxTokens)
 	}
 	if option.Reasoning != nil && option.Reasoning.MaxTokens != nil {
+		budget := int64(*option.Reasoning.MaxTokens)
 		params.Thinking = anthropic.ThinkingConfigParamUnion{
-			OfEnabled: &anthropic.ThinkingConfigEnabledParam{
-				BudgetTokens: int64(*option.Reasoning.MaxTokens),
-			},
+			OfEnabled: &anthropic.ThinkingConfigEnabledParam{BudgetTokens: budget},
+		}
+		// max_tokens must exceed the thinking budget, which the default alone
+		// does not guarantee. An explicit MaxTokens stays the caller's call.
+		if option.MaxTokens == nil && params.MaxTokens <= budget {
+			params.MaxTokens = budget + anthropicDefaultMaxTokens
 		}
 	}
 	// Extended thinking pins temperature to 1; sending both is a request error.
@@ -524,9 +528,17 @@ func (a *anthropicStreamAccum) start(index int64, block anthropic.ContentBlockSt
 func (a *anthropicStreamAccum) toolCalls() []openai.ChatCompletionMessageToolCallUnion {
 	var out []openai.ChatCompletionMessageToolCallUnion
 	for _, index := range a.order {
-		if call := a.blocks[index].toolCall; call != nil {
-			out = append(out, *call)
+		call := a.blocks[index].toolCall
+		if call == nil {
+			continue
 		}
+		snapshot := *call
+		// A tool taking no arguments streams no input_json_delta at all, which
+		// would otherwise surface as unparseable empty arguments.
+		if snapshot.Function.Arguments == "" {
+			snapshot.Function.Arguments = "{}"
+		}
+		out = append(out, snapshot)
 	}
 	return out
 }
