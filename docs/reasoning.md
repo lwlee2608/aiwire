@@ -23,7 +23,13 @@ Verified by integration tests against live providers, May 2026. "Replay" means a
 | ----------------------------------------------- | -------------- | -------------- | -------------- | ------ |
 | OpenAI `https://api.openai.com/v1/chat/completions` | yes        | **no**         | **no**         | n/a    |
 | OpenAI `https://api.openai.com/v1/responses`        | yes (out-of-scope, see below) |
-| Anthropic native (`https://api.anthropic.com/v1/messages`) | not supported by aiwire (uses Messages API, not chat completions) |
+| Anthropic Messages API, via `AnthropicService`      | **no**\*   | yes            | yes (redacted) | yes    |
+
+\* `AnthropicService` enables extended thinking when `ReasoningOption.MaxTokens`
+is set, and translates `thinking` / `redacted_thinking` blocks into the same
+`reasoning_details` shape used elsewhere, so replay works. Bedrock folds thinking
+tokens into `output_tokens` rather than reporting them separately, so
+`ReasoningTokens` reads 0 there.
 
 ## Why OpenRouter only
 

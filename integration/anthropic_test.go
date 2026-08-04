@@ -10,7 +10,7 @@ import (
 )
 
 func TestAnthropic_Completion(t *testing.T) {
-	service := aiwire.NewOpenAIService(keyOrSkip(t, "ANTHROPIC_API_KEY"), "https://api.anthropic.com/v1")
+	service := aiwire.NewAnthropicAPIService(keyOrSkip(t, "ANTHROPIC_API_KEY"))
 	messages := []openai.ChatCompletionMessageParamUnion{
 		openai.UserMessage("Hello, can you tell me a joke?"),
 	}
@@ -22,7 +22,7 @@ func TestAnthropic_Completion(t *testing.T) {
 }
 
 func TestAnthropic_Streaming(t *testing.T) {
-	service := aiwire.NewOpenAIService(keyOrSkip(t, "ANTHROPIC_API_KEY"), "https://api.anthropic.com/v1")
+	service := aiwire.NewAnthropicAPIService(keyOrSkip(t, "ANTHROPIC_API_KEY"))
 	messages := []openai.ChatCompletionMessageParamUnion{
 		openai.UserMessage("Hello, can you tell me a short joke?"),
 	}

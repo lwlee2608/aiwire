@@ -31,6 +31,12 @@ The library has three main components:
 - **Agent** — orchestrates multi-step interactions, parsing tool calls from the LLM and executing them in a loop
 - **Tool** — interface for defining tools the agent can invoke
 
+`AnthropicService` is an alternative `Completion` implementation that speaks
+Anthropic's native Messages API, either on AWS Bedrock
+(`NewAnthropicService(apiKey, region)`, authenticated with a Bedrock API key) or
+the first-party API (`NewAnthropicAPIService(apiKey)`). It supports completions,
+streaming, tool calls, and extended thinking; model listing is not available.
+
 ## Experimental: Responses API
 
 `Service.Respond` / `Service.RespondStream` and the surrounding types (`Responses`, `ResponsesOption`, `ResponsesResponse`, `ResponsesStreamChunk`) target the `/v1/responses` endpoint and are in beta. The shape may change without notice. OpenRouter's `/v1/responses` is itself a beta endpoint and runs in stateless mode — `PreviousResponseID` and `Store` are honored by OpenAI and ignored by OpenRouter.

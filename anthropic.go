@@ -1,65 +1,62 @@
 package aiwire
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"net/http"
-	"net/url"
+	"strings"
 
+	"github.com/anthropics/anthropic-sdk-go"
+	"github.com/anthropics/anthropic-sdk-go/bedrock"
+	anthropicoption "github.com/anthropics/anthropic-sdk-go/option"
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/packages/pagination"
 )
 
-const anthropicVersion = "bedrock-2023-05-31"
 const anthropicDefaultMaxTokens = 4096
 
-// AnthropicService is a minimal client for Anthropic models on AWS Bedrock,
-// authenticated with a Bedrock API key (bearer token). Streaming and model
-// listing are not yet supported.
+const anthropicProvider = "anthropic"
+
+// reasoning_details entries follow OpenRouter's wire shape so they round-trip
+// through [AssistantMessageWithReasoning] like every other provider's.
+const (
+	reasoningDetailTypeText      = "reasoning.text"
+	reasoningDetailTypeEncrypted = "reasoning.encrypted"
+)
+
+// AnthropicService is a client for Claude models backed by the Anthropic SDK.
+// It speaks the native Messages API while accepting and returning the
+// OpenAI-shaped types used by the rest of this package. Model listing is not
+// supported.
 type AnthropicService struct {
-	apiKey     string
-	region     string
-	httpClient *http.Client
+	client anthropic.Client
 }
 
+// NewAnthropicService returns a service that reaches Claude through AWS Bedrock
+// in region, authenticated with a Bedrock API key (bearer token).
 func NewAnthropicService(apiKey string, region string) *AnthropicService {
+	cfg := aws.Config{
+		Region:                  region,
+		BearerAuthTokenProvider: bedrock.NewStaticBearerTokenProvider(apiKey),
+	}
 	return &AnthropicService{
-		apiKey:     apiKey,
-		region:     region,
-		httpClient: &http.Client{},
+		// Without WithoutEnvironmentDefaults, a stray ANTHROPIC_API_KEY in the
+		// environment rides along as an X-Api-Key header on Bedrock requests.
+		client: anthropic.NewClient(
+			anthropicoption.WithoutEnvironmentDefaults(),
+			bedrock.WithConfig(cfg),
+		),
 	}
 }
 
-type anthropicMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
-}
-
-type anthropicRequest struct {
-	AnthropicVersion string             `json:"anthropic_version"`
-	MaxTokens        int                `json:"max_tokens"`
-	System           string             `json:"system,omitempty"`
-	Messages         []anthropicMessage `json:"messages"`
-	Temperature      *float64           `json:"temperature,omitempty"`
-}
-
-type anthropicResponse struct {
-	Model   string `json:"model"`
-	Content []struct {
-		Type string `json:"type"`
-		Text string `json:"text"`
-	} `json:"content"`
-	StopReason string `json:"stop_reason"`
-	Usage      struct {
-		InputTokens              int64 `json:"input_tokens"`
-		OutputTokens             int64 `json:"output_tokens"`
-		CacheReadInputTokens     int64 `json:"cache_read_input_tokens"`
-		CacheCreationInputTokens int64 `json:"cache_creation_input_tokens"`
-	} `json:"usage"`
+// NewAnthropicAPIService returns a service that reaches Claude through the
+// first-party Anthropic API.
+func NewAnthropicAPIService(apiKey string) *AnthropicService {
+	return &AnthropicService{
+		client: anthropic.NewClient(anthropicoption.WithAPIKey(apiKey)),
+	}
 }
 
 func (s *AnthropicService) Completions(
@@ -68,89 +65,48 @@ func (s *AnthropicService) Completions(
 	tools []openai.ChatCompletionToolUnionParam,
 	option CompletionOption) (CompletionResponse, error) {
 
-	if len(tools) > 0 {
-		return CompletionResponse{}, errors.New("anthropic: tools are not supported")
+	params, err := anthropicParams(messages, tools, option)
+	if err != nil {
+		return CompletionResponse{}, err
 	}
 
-	body := anthropicRequest{
-		AnthropicVersion: anthropicVersion,
-		MaxTokens:        anthropicDefaultMaxTokens,
-	}
-	if option.MaxTokens != nil {
-		body.MaxTokens = *option.MaxTokens
-	}
-	if !option.OmitTemperature {
-		body.Temperature = &option.Temperature
+	message, err := s.client.Messages.New(ctx, params)
+	if err != nil {
+		return CompletionResponse{}, err
 	}
 
-	for _, m := range messages {
-		switch {
-		case m.OfSystem != nil:
-			body.System = m.OfSystem.Content.OfString.Value
-		case m.OfUser != nil:
-			body.Messages = append(body.Messages, anthropicMessage{Role: "user", Content: m.OfUser.Content.OfString.Value})
-		case m.OfAssistant != nil:
-			body.Messages = append(body.Messages, anthropicMessage{Role: "assistant", Content: m.OfAssistant.Content.OfString.Value})
-		default:
-			return CompletionResponse{}, errors.New("anthropic: only system, user, and assistant text messages are supported")
+	out := openai.ChatCompletionMessage{Role: "assistant"}
+	var content, reasoning strings.Builder
+	var details []ReasoningDetail
+
+	for _, block := range message.Content {
+		switch block.Type {
+		case "text":
+			content.WriteString(block.Text)
+		case "thinking":
+			reasoning.WriteString(block.Thinking)
+			details = append(details, anthropicReasoningText(len(details), block.Thinking, block.Signature))
+		case "redacted_thinking":
+			details = append(details, anthropicReasoningEncrypted(len(details), block.Data))
+		case "tool_use":
+			out.ToolCalls = append(out.ToolCalls, openai.ChatCompletionMessageToolCallUnion{
+				ID:   block.ID,
+				Type: "function",
+				Function: openai.ChatCompletionMessageFunctionToolCallFunction{
+					Name:      block.Name,
+					Arguments: string(block.Input),
+				},
+			})
 		}
 	}
-
-	payload, err := json.Marshal(body)
-	if err != nil {
-		return CompletionResponse{}, err
-	}
-
-	endpoint := fmt.Sprintf("https://bedrock-runtime.%s.amazonaws.com/model/%s/invoke",
-		s.region, url.PathEscape(option.Model))
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
-	if err != nil {
-		return CompletionResponse{}, err
-	}
-	req.Header.Set("Authorization", "Bearer "+s.apiKey)
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := s.httpClient.Do(req)
-	if err != nil {
-		return CompletionResponse{}, err
-	}
-	defer resp.Body.Close()
-
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return CompletionResponse{}, err
-	}
-	if resp.StatusCode != http.StatusOK {
-		return CompletionResponse{}, fmt.Errorf("anthropic: %s: %s", resp.Status, respBody)
-	}
-
-	var out anthropicResponse
-	if err := json.Unmarshal(respBody, &out); err != nil {
-		return CompletionResponse{}, err
-	}
-
-	var content string
-	for _, c := range out.Content {
-		if c.Type == "text" {
-			content += c.Text
-		}
-	}
+	out.Content = content.String()
 
 	return CompletionResponse{
-		Message: openai.ChatCompletionMessage{
-			Role:    "assistant",
-			Content: content,
-		},
-		Provider: "anthropic",
-		Usage: Usage{
-			PromptTokens:     out.Usage.InputTokens,
-			CompletionTokens: out.Usage.OutputTokens,
-			TotalTokens:      out.Usage.InputTokens + out.Usage.OutputTokens,
-			PromptTokensDetails: PromptTokensDetails{
-				CachedTokens:        out.Usage.CacheReadInputTokens,
-				CacheCreationTokens: out.Usage.CacheCreationInputTokens,
-			},
-		},
+		Message:          out,
+		Reasoning:        reasoning.String(),
+		ReasoningDetails: details,
+		Provider:         anthropicProvider,
+		Usage:            anthropicUsage(message.Usage),
 	}, nil
 }
 
@@ -160,11 +116,433 @@ func (s *AnthropicService) CompletionsStream(
 	tools []openai.ChatCompletionToolUnionParam,
 	option CompletionOption,
 	callback StreamCallback) error {
-	return errors.New("anthropic: streaming is not supported")
+
+	params, err := anthropicParams(messages, tools, option)
+	if err != nil {
+		return err
+	}
+
+	stream := s.client.Messages.NewStreaming(ctx, params)
+	defer stream.Close()
+
+	acc := anthropicStreamAccum{blocks: map[int64]*anthropicStreamBlock{}}
+	var usage Usage
+
+	for stream.Next() {
+		event := stream.Current()
+		chunk := StreamChunk{Provider: anthropicProvider}
+
+		switch event.Type {
+		case "message_start":
+			chunk.Role = "assistant"
+			usage = anthropicUsage(event.Message.Usage)
+		case "content_block_start":
+			acc.start(event.Index, event.ContentBlock)
+			if event.ContentBlock.Type == "tool_use" {
+				chunk.ToolCalls = acc.toolCalls()
+			}
+		case "content_block_delta":
+			block := acc.blocks[event.Index]
+			switch event.Delta.Type {
+			case "text_delta":
+				chunk.Content = event.Delta.Text
+			case "thinking_delta":
+				chunk.Reasoning = event.Delta.Thinking
+				if block != nil {
+					block.thinking.WriteString(event.Delta.Thinking)
+				}
+			case "signature_delta":
+				if block != nil {
+					block.signature += event.Delta.Signature
+				}
+			case "input_json_delta":
+				if block != nil && block.toolCall != nil {
+					block.toolCall.Function.Arguments += event.Delta.PartialJSON
+					chunk.ToolCalls = acc.toolCalls()
+				}
+			}
+		case "message_delta":
+			chunk.FinishReason = anthropicFinishReason(string(event.Delta.StopReason))
+			usage.CompletionTokens = event.Usage.OutputTokens
+			if event.Usage.InputTokens > 0 {
+				usage.PromptTokens = event.Usage.InputTokens
+			}
+			if event.Usage.CacheReadInputTokens > 0 {
+				usage.PromptTokensDetails.CachedTokens = event.Usage.CacheReadInputTokens
+			}
+			if event.Usage.CacheCreationInputTokens > 0 {
+				usage.PromptTokensDetails.CacheCreationTokens = event.Usage.CacheCreationInputTokens
+			}
+			usage.CompletionTokensDetails.ReasoningTokens = event.Usage.OutputTokensDetails.ThinkingTokens
+			usage.TotalTokens = usage.PromptTokens + usage.CompletionTokens
+		}
+
+		if chunk.Content == "" && chunk.Reasoning == "" && chunk.Role == "" &&
+			chunk.FinishReason == "" && len(chunk.ToolCalls) == 0 {
+			continue
+		}
+		if err := callback(chunk); err != nil {
+			return err
+		}
+	}
+
+	if err := stream.Err(); err != nil {
+		return err
+	}
+
+	return callback(StreamChunk{
+		Done:             true,
+		Provider:         anthropicProvider,
+		Usage:            &usage,
+		ReasoningDetails: acc.reasoningDetails(),
+	})
 }
 
 func (s *AnthropicService) Models(ctx context.Context) (*pagination.Page[openai.Model], error) {
 	return nil, errors.New("anthropic: model listing is not supported")
+}
+
+func anthropicParams(
+	messages []openai.ChatCompletionMessageParamUnion,
+	tools []openai.ChatCompletionToolUnionParam,
+	option CompletionOption,
+) (anthropic.MessageNewParams, error) {
+	system, converted, err := anthropicMessages(messages)
+	if err != nil {
+		return anthropic.MessageNewParams{}, err
+	}
+
+	toolParams, err := anthropicTools(tools)
+	if err != nil {
+		return anthropic.MessageNewParams{}, err
+	}
+
+	params := anthropic.MessageNewParams{
+		Model:     anthropic.Model(option.Model),
+		MaxTokens: anthropicDefaultMaxTokens,
+		System:    system,
+		Messages:  converted,
+		Tools:     toolParams,
+	}
+	if option.MaxTokens != nil {
+		params.MaxTokens = int64(*option.MaxTokens)
+	}
+	if option.Reasoning != nil && option.Reasoning.MaxTokens != nil {
+		params.Thinking = anthropic.ThinkingConfigParamUnion{
+			OfEnabled: &anthropic.ThinkingConfigEnabledParam{
+				BudgetTokens: int64(*option.Reasoning.MaxTokens),
+			},
+		}
+	}
+	// Extended thinking pins temperature to 1; sending both is a request error.
+	if !option.OmitTemperature && params.Thinking.OfEnabled == nil {
+		params.Temperature = anthropic.Float(option.Temperature)
+	}
+
+	return params, nil
+}
+
+func anthropicMessages(messages []openai.ChatCompletionMessageParamUnion) ([]anthropic.TextBlockParam, []anthropic.MessageParam, error) {
+	var system []anthropic.TextBlockParam
+	var out []anthropic.MessageParam
+
+	add := func(role anthropic.MessageParamRole, blocks ...anthropic.ContentBlockParamUnion) {
+		if len(blocks) == 0 {
+			return
+		}
+		// Anthropic models one turn per role, so consecutive same-role messages
+		// — parallel tool results especially — must merge into a single turn.
+		if n := len(out); n > 0 && out[n-1].Role == role {
+			out[n-1].Content = append(out[n-1].Content, blocks...)
+			return
+		}
+		out = append(out, anthropic.MessageParam{Role: role, Content: blocks})
+	}
+
+	for _, m := range messages {
+		switch {
+		case m.OfSystem != nil:
+			text, err := anthropicTextContent(m.OfSystem.Content)
+			if err != nil {
+				return nil, nil, err
+			}
+			system = append(system, anthropic.TextBlockParam{Text: text})
+		case m.OfDeveloper != nil:
+			text, err := anthropicTextContent(m.OfDeveloper.Content)
+			if err != nil {
+				return nil, nil, err
+			}
+			system = append(system, anthropic.TextBlockParam{Text: text})
+		case m.OfUser != nil:
+			text, err := anthropicTextContent(m.OfUser.Content)
+			if err != nil {
+				return nil, nil, err
+			}
+			add(anthropic.MessageParamRoleUser, anthropic.NewTextBlock(text))
+		case m.OfAssistant != nil:
+			blocks, err := anthropicAssistantBlocks(*m.OfAssistant)
+			if err != nil {
+				return nil, nil, err
+			}
+			add(anthropic.MessageParamRoleAssistant, blocks...)
+		case m.OfTool != nil:
+			text, err := anthropicTextContent(m.OfTool.Content)
+			if err != nil {
+				return nil, nil, err
+			}
+			add(anthropic.MessageParamRoleUser, anthropic.NewToolResultBlock(m.OfTool.ToolCallID, text, false))
+		default:
+			return nil, nil, errors.New("anthropic: unsupported message type")
+		}
+	}
+
+	return system, out, nil
+}
+
+func anthropicAssistantBlocks(m openai.ChatCompletionAssistantMessageParam) ([]anthropic.ContentBlockParamUnion, error) {
+	blocks := anthropicThinkingBlocks(m)
+
+	text, err := anthropicTextContent(m.Content)
+	if err != nil {
+		return nil, err
+	}
+	if text != "" {
+		blocks = append(blocks, anthropic.NewTextBlock(text))
+	}
+
+	for _, call := range m.ToolCalls {
+		fn := call.OfFunction
+		if fn == nil {
+			return nil, errors.New("anthropic: only function tool calls are supported")
+		}
+		input := any(map[string]any{})
+		if args := fn.Function.Arguments; args != "" {
+			if err := json.Unmarshal([]byte(args), &input); err != nil {
+				return nil, fmt.Errorf("anthropic: tool call %s has invalid arguments: %w", fn.ID, err)
+			}
+		}
+		blocks = append(blocks, anthropic.NewToolUseBlock(fn.ID, input, fn.Function.Name))
+	}
+
+	return blocks, nil
+}
+
+// anthropicThinkingBlocks recovers the thinking blocks stashed on an assistant
+// message by [AssistantMessageWithReasoning]. They must lead the turn and keep
+// their signature, or Anthropic rejects the follow-up request.
+func anthropicThinkingBlocks(m openai.ChatCompletionAssistantMessageParam) []anthropic.ContentBlockParamUnion {
+	raw, err := m.MarshalJSON()
+	if err != nil {
+		return nil
+	}
+
+	var probe struct {
+		ReasoningDetails []struct {
+			Type      string `json:"type"`
+			Text      string `json:"text"`
+			Data      string `json:"data"`
+			Signature string `json:"signature"`
+		} `json:"reasoning_details"`
+	}
+	if err := json.Unmarshal(raw, &probe); err != nil {
+		return nil
+	}
+
+	var blocks []anthropic.ContentBlockParamUnion
+	for _, detail := range probe.ReasoningDetails {
+		switch detail.Type {
+		case reasoningDetailTypeText:
+			if detail.Signature != "" {
+				blocks = append(blocks, anthropic.NewThinkingBlock(detail.Signature, detail.Text))
+			}
+		case reasoningDetailTypeEncrypted:
+			blocks = append(blocks, anthropic.NewRedactedThinkingBlock(detail.Data))
+		}
+	}
+	return blocks
+}
+
+// anthropicTextContent flattens an OpenAI message content union. Every variant
+// marshals to either a JSON string or an array of content parts, so decoding
+// the marshaled form covers them all without a switch per message type.
+func anthropicTextContent(content json.Marshaler) (string, error) {
+	raw, err := content.MarshalJSON()
+	if err != nil {
+		return "", err
+	}
+
+	var text string
+	if err := json.Unmarshal(raw, &text); err == nil {
+		return text, nil
+	}
+
+	var parts []struct {
+		Type string `json:"type"`
+		Text string `json:"text"`
+	}
+	if err := json.Unmarshal(raw, &parts); err != nil {
+		return "", fmt.Errorf("anthropic: unsupported message content: %s", raw)
+	}
+
+	var b strings.Builder
+	for _, part := range parts {
+		if part.Type != "text" {
+			return "", fmt.Errorf("anthropic: unsupported content part %q", part.Type)
+		}
+		b.WriteString(part.Text)
+	}
+	return b.String(), nil
+}
+
+func anthropicTools(tools []openai.ChatCompletionToolUnionParam) ([]anthropic.ToolUnionParam, error) {
+	if len(tools) == 0 {
+		return nil, nil
+	}
+
+	out := make([]anthropic.ToolUnionParam, 0, len(tools))
+	for _, t := range tools {
+		fn := t.GetFunction()
+		if fn == nil {
+			return nil, errors.New("anthropic: only function tools are supported")
+		}
+
+		tool := anthropic.ToolParam{Name: fn.Name}
+		if fn.Description.Valid() {
+			tool.Description = anthropic.String(fn.Description.Value)
+		}
+		for key, value := range fn.Parameters {
+			switch key {
+			case "type":
+			case "properties":
+				tool.InputSchema.Properties = value
+			case "required":
+				tool.InputSchema.Required = anthropicStringSlice(value)
+			default:
+				if tool.InputSchema.ExtraFields == nil {
+					tool.InputSchema.ExtraFields = map[string]any{}
+				}
+				tool.InputSchema.ExtraFields[key] = value
+			}
+		}
+
+		out = append(out, anthropic.ToolUnionParam{OfTool: &tool})
+	}
+	return out, nil
+}
+
+func anthropicStringSlice(value any) []string {
+	switch v := value.(type) {
+	case []string:
+		return v
+	case []any:
+		out := make([]string, 0, len(v))
+		for _, item := range v {
+			if s, ok := item.(string); ok {
+				out = append(out, s)
+			}
+		}
+		return out
+	}
+	return nil
+}
+
+func anthropicReasoningText(index int, text string, signature string) ReasoningDetail {
+	raw, _ := json.Marshal(map[string]any{
+		"type":      reasoningDetailTypeText,
+		"index":     index,
+		"text":      text,
+		"signature": signature,
+	})
+	return ReasoningDetail{Type: reasoningDetailTypeText, Index: index, Raw: raw}
+}
+
+func anthropicReasoningEncrypted(index int, data string) ReasoningDetail {
+	raw, _ := json.Marshal(map[string]any{
+		"type":  reasoningDetailTypeEncrypted,
+		"index": index,
+		"data":  data,
+	})
+	return ReasoningDetail{Type: reasoningDetailTypeEncrypted, Index: index, Raw: raw}
+}
+
+func anthropicUsage(u anthropic.Usage) Usage {
+	return Usage{
+		PromptTokens:     u.InputTokens,
+		CompletionTokens: u.OutputTokens,
+		TotalTokens:      u.InputTokens + u.OutputTokens,
+		PromptTokensDetails: PromptTokensDetails{
+			CachedTokens:        u.CacheReadInputTokens,
+			CacheCreationTokens: u.CacheCreationInputTokens,
+		},
+		CompletionTokensDetails: CompletionTokensDetails{
+			ReasoningTokens: u.OutputTokensDetails.ThinkingTokens,
+		},
+	}
+}
+
+func anthropicFinishReason(stopReason string) string {
+	switch stopReason {
+	case "end_turn", "stop_sequence":
+		return "stop"
+	case "max_tokens":
+		return "length"
+	case "tool_use":
+		return "tool_calls"
+	}
+	return stopReason
+}
+
+// anthropicStreamBlock accumulates one content block across its delta events.
+type anthropicStreamBlock struct {
+	kind      string
+	thinking  strings.Builder
+	signature string
+	data      string
+	toolCall  *openai.ChatCompletionMessageToolCallUnion
+}
+
+type anthropicStreamAccum struct {
+	blocks map[int64]*anthropicStreamBlock
+	order  []int64
+}
+
+func (a *anthropicStreamAccum) start(index int64, block anthropic.ContentBlockStartEventContentBlockUnion) {
+	entry := &anthropicStreamBlock{kind: block.Type, data: block.Data}
+	if block.Type == "tool_use" {
+		entry.toolCall = &openai.ChatCompletionMessageToolCallUnion{
+			ID:   block.ID,
+			Type: "function",
+			Function: openai.ChatCompletionMessageFunctionToolCallFunction{
+				Name: block.Name,
+			},
+		}
+	}
+	a.blocks[index] = entry
+	a.order = append(a.order, index)
+}
+
+func (a *anthropicStreamAccum) toolCalls() []openai.ChatCompletionMessageToolCallUnion {
+	var out []openai.ChatCompletionMessageToolCallUnion
+	for _, index := range a.order {
+		if call := a.blocks[index].toolCall; call != nil {
+			out = append(out, *call)
+		}
+	}
+	return out
+}
+
+func (a *anthropicStreamAccum) reasoningDetails() []ReasoningDetail {
+	var out []ReasoningDetail
+	for _, index := range a.order {
+		block := a.blocks[index]
+		switch block.kind {
+		case "thinking":
+			out = append(out, anthropicReasoningText(len(out), block.thinking.String(), block.signature))
+		case "redacted_thinking":
+			out = append(out, anthropicReasoningEncrypted(len(out), block.data))
+		}
+	}
+	return out
 }
 
 var _ Completion = (*AnthropicService)(nil)
