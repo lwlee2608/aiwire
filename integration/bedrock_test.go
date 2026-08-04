@@ -12,7 +12,7 @@ import (
 
 const (
 	bedrockGPTModel    = "openai.gpt-oss-120b-1:0"
-	bedrockClaudeModel = "us.anthropic.claude-sonnet-5"
+	bedrockClaudeModel = "global.anthropic.claude-haiku-4-5-20251001-v1:0"
 )
 
 func bedrockRegion() string {
