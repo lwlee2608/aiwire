@@ -23,13 +23,41 @@ Verified by integration tests against live providers, May 2026. "Replay" means a
 | ----------------------------------------------- | -------------- | -------------- | -------------- | ------ |
 | OpenAI `https://api.openai.com/v1/chat/completions` | yes        | **no**         | **no**         | n/a    |
 | OpenAI `https://api.openai.com/v1/responses`        | yes (out-of-scope, see below) |
-| Anthropic Messages API, via `AnthropicService`      | **no**\*   | yes            | yes (redacted) | yes    |
+| `AnthropicService`, budget thinking (4.5-era models) | **no**\*  | yes            | yes (redacted) | yes    |
+| `AnthropicService`, adaptive thinking (Claude 5)     | yes       | **no**\*\*     | n/a            | yes    |
 
-\* `AnthropicService` enables extended thinking when `ReasoningOption.MaxTokens`
-is set, and translates `thinking` / `redacted_thinking` blocks into the same
-`reasoning_details` shape used elsewhere, so replay works. Bedrock folds thinking
-tokens into `output_tokens` rather than reporting them separately, so
-`ReasoningTokens` reads 0 there.
+`AnthropicService` translates `thinking` / `redacted_thinking` blocks into the
+same `reasoning_details` shape used elsewhere, so replay works in both modes.
+
+\* Bedrock folds thinking tokens into `output_tokens` rather than reporting them
+separately, so `ReasoningTokens` reads 0 there.
+
+\*\* Claude 5 returns a thinking block carrying only a signature — no text — so
+`CompletionResponse.Reasoning` is empty while `ReasoningDetails` still holds the
+signature needed for replay.
+
+## Picking the mechanism
+
+Anthropic splits thinking control across two mutually exclusive mechanisms, by
+model generation. Each is rejected by the other's models, so `ReasoningOption`
+selects between them and `MaxTokens` wins when both are set:
+
+```
+ReasoningOption            wire form                              models
+-------------------------------------------------------------------------------
+MaxTokens: &n       →  thinking.enabled + budget_tokens      4.5-era (Bedrock)
+Effort: high        →  thinking.adaptive + output_config     Claude 5
+Effort: none        →  thinking.disabled                     both
+```
+
+Sending a budget to a Claude 5 model returns *"thinking.type.enabled is not
+supported for this model"*; sending `output_config.effort` to a 4.5-era model on
+Bedrock returns *"Extra inputs are not permitted"*. Effort maps straight through
+for `low`/`medium`/`high`/`xhigh`; `minimal` floors to `low`.
+
+Both thinking modes pin `temperature` to 1, so `AnthropicService` omits it when
+either is active. Claude 5 models reject `temperature` outright — set
+`CompletionOption.OmitTemperature` for those regardless of thinking.
 
 ## Why OpenRouter only
 

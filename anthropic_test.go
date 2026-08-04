@@ -337,13 +337,58 @@ func TestAnthropicParams_ThinkingBudget(t *testing.T) {
 		assert.Equal(t, int64(2048), params.MaxTokens)
 	})
 
-	t.Run("no budget means no thinking", func(t *testing.T) {
+	t.Run("a budget wins over an effort", func(t *testing.T) {
+		budget := 1024
 		params, err := anthropicParams(messages, nil, CompletionOption{
 			Model:     "m",
-			Reasoning: &ReasoningOption{Effort: ReasoningEffortHigh},
+			Reasoning: &ReasoningOption{Effort: ReasoningEffortHigh, MaxTokens: &budget},
 		})
 		require.NoError(t, err)
-		assert.Nil(t, params.Thinking.OfEnabled)
+		require.NotNil(t, params.Thinking.OfEnabled)
+		assert.Nil(t, params.Thinking.OfAdaptive)
+		assert.Empty(t, string(params.OutputConfig.Effort), "the two mechanisms are mutually exclusive")
+	})
+}
+
+func TestAnthropicParams_Effort(t *testing.T) {
+	messages := []openai.ChatCompletionMessageParamUnion{openai.UserMessage("hi")}
+
+	params := func(t *testing.T, reasoning *ReasoningOption) anthropic.MessageNewParams {
+		t.Helper()
+		out, err := anthropicParams(messages, nil, CompletionOption{Model: "m", Reasoning: reasoning})
+		require.NoError(t, err)
+		return out
+	}
+
+	t.Run("maps effort onto adaptive thinking", func(t *testing.T) {
+		for effort, want := range map[ReasoningEffort]anthropic.OutputConfigEffort{
+			ReasoningEffortXHigh:   anthropic.OutputConfigEffortXhigh,
+			ReasoningEffortHigh:    anthropic.OutputConfigEffortHigh,
+			ReasoningEffortMedium:  anthropic.OutputConfigEffortMedium,
+			ReasoningEffortLow:     anthropic.OutputConfigEffortLow,
+			ReasoningEffortMinimal: anthropic.OutputConfigEffortLow,
+		} {
+			out := params(t, &ReasoningOption{Effort: effort})
+			require.NotNil(t, out.Thinking.OfAdaptive, effort)
+			assert.Nil(t, out.Thinking.OfEnabled, effort)
+			assert.Equal(t, want, out.OutputConfig.Effort, effort)
+			assert.False(t, out.Temperature.Valid(), "adaptive thinking pins temperature to 1")
+		}
+	})
+
+	t.Run("effort none disables thinking", func(t *testing.T) {
+		out := params(t, &ReasoningOption{Effort: ReasoningEffortNone})
+		require.NotNil(t, out.Thinking.OfDisabled)
+		assert.Nil(t, out.Thinking.OfAdaptive)
+		assert.Empty(t, string(out.OutputConfig.Effort))
+		assert.True(t, out.Temperature.Valid(), "disabled thinking still allows a temperature")
+	})
+
+	t.Run("an empty reasoning option leaves thinking unset", func(t *testing.T) {
+		out := params(t, &ReasoningOption{})
+		assert.Nil(t, out.Thinking.OfAdaptive)
+		assert.Nil(t, out.Thinking.OfEnabled)
+		assert.Nil(t, out.Thinking.OfDisabled)
 	})
 }
 

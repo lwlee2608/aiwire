@@ -237,23 +237,58 @@ func anthropicParams(
 	if option.MaxTokens != nil {
 		params.MaxTokens = int64(*option.MaxTokens)
 	}
-	if option.Reasoning != nil && option.Reasoning.MaxTokens != nil {
-		budget := int64(*option.Reasoning.MaxTokens)
+	if option.Reasoning != nil {
+		anthropicThinking(&params, *option.Reasoning, option.MaxTokens == nil)
+	}
+	// Thinking, adaptive included, pins temperature to 1; sending both is a
+	// request error.
+	if !option.OmitTemperature && params.Thinking.OfEnabled == nil && params.Thinking.OfAdaptive == nil {
+		params.Temperature = anthropic.Float(option.Temperature)
+	}
+
+	return params, nil
+}
+
+// Anthropic splits thinking control across two mutually exclusive mechanisms,
+// by model generation: 4.5-era models take thinking.enabled with an explicit
+// budget, Claude 5 models take thinking.adaptive plus output_config.effort and
+// reject a budget. Each 400s on the other's models, so MaxTokens and Effort
+// pick the mechanism and MaxTokens wins when both are set.
+func anthropicThinking(params *anthropic.MessageNewParams, reasoning ReasoningOption, defaultMaxTokens bool) {
+	switch {
+	case reasoning.MaxTokens != nil:
+		budget := int64(*reasoning.MaxTokens)
 		params.Thinking = anthropic.ThinkingConfigParamUnion{
 			OfEnabled: &anthropic.ThinkingConfigEnabledParam{BudgetTokens: budget},
 		}
 		// max_tokens must exceed the thinking budget; the default may not.
 		// An explicit MaxTokens is left alone.
-		if option.MaxTokens == nil && params.MaxTokens <= budget {
+		if defaultMaxTokens && params.MaxTokens <= budget {
 			params.MaxTokens = budget + anthropicDefaultMaxTokens
 		}
+	case reasoning.Effort == ReasoningEffortNone:
+		params.Thinking = anthropic.ThinkingConfigParamUnion{
+			OfDisabled: &anthropic.ThinkingConfigDisabledParam{},
+		}
+	case reasoning.Effort != "":
+		params.Thinking = anthropic.ThinkingConfigParamUnion{
+			OfAdaptive: &anthropic.ThinkingConfigAdaptiveParam{},
+		}
+		params.OutputConfig.Effort = anthropicEffort(reasoning.Effort)
 	}
-	// Extended thinking pins temperature to 1; sending both is a request error.
-	if !option.OmitTemperature && params.Thinking.OfEnabled == nil {
-		params.Temperature = anthropic.Float(option.Temperature)
-	}
+}
 
-	return params, nil
+// Anthropic has no "minimal" tier, so it floors to low.
+func anthropicEffort(effort ReasoningEffort) anthropic.OutputConfigEffort {
+	switch effort {
+	case ReasoningEffortXHigh:
+		return anthropic.OutputConfigEffortXhigh
+	case ReasoningEffortHigh:
+		return anthropic.OutputConfigEffortHigh
+	case ReasoningEffortMedium:
+		return anthropic.OutputConfigEffortMedium
+	}
+	return anthropic.OutputConfigEffortLow
 }
 
 func anthropicOutputConfig(format openai.ChatCompletionNewParamsResponseFormatUnion) (anthropic.OutputConfigParam, error) {

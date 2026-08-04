@@ -35,7 +35,10 @@ The library has three main components:
 Anthropic's native Messages API, either on AWS Bedrock
 (`NewAnthropicService(apiKey, region)`, authenticated with a Bedrock API key) or
 the first-party API (`NewAnthropicAPIService(apiKey)`). It supports completions,
-streaming, tool calls, and extended thinking; model listing is not available.
+streaming, tool calls, structured outputs, and extended thinking. Message
+content is text-only — image and file parts are rejected — and model listing is
+not available. Thinking control differs by model generation; see
+[docs/reasoning.md](docs/reasoning.md).
 
 ## Experimental: Responses API
 
