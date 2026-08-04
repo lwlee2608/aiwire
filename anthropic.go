@@ -221,12 +221,18 @@ func anthropicParams(
 		return anthropic.MessageNewParams{}, err
 	}
 
+	outputConfig, err := anthropicOutputConfig(option.ResponseFormat)
+	if err != nil {
+		return anthropic.MessageNewParams{}, err
+	}
+
 	params := anthropic.MessageNewParams{
-		Model:     anthropic.Model(option.Model),
-		MaxTokens: anthropicDefaultMaxTokens,
-		System:    system,
-		Messages:  converted,
-		Tools:     toolParams,
+		Model:        anthropic.Model(option.Model),
+		MaxTokens:    anthropicDefaultMaxTokens,
+		System:       system,
+		Messages:     converted,
+		Tools:        toolParams,
+		OutputConfig: outputConfig,
 	}
 	if option.MaxTokens != nil {
 		params.MaxTokens = int64(*option.MaxTokens)
@@ -248,6 +254,40 @@ func anthropicParams(
 	}
 
 	return params, nil
+}
+
+func anthropicOutputConfig(format openai.ChatCompletionNewParamsResponseFormatUnion) (anthropic.OutputConfigParam, error) {
+	switch {
+	case format.OfJSONSchema != nil:
+		schema, err := anthropicSchemaMap(format.OfJSONSchema.JSONSchema.Schema)
+		if err != nil {
+			return anthropic.OutputConfigParam{}, err
+		}
+		return anthropic.OutputConfigParam{
+			Format: anthropic.JSONOutputFormatParam{Schema: schema},
+		}, nil
+	case format.OfJSONObject != nil:
+		return anthropic.OutputConfigParam{}, errors.New("anthropic: json_object response format is not supported, use json_schema")
+	}
+	return anthropic.OutputConfigParam{}, nil
+}
+
+func anthropicSchemaMap(schema any) (map[string]any, error) {
+	if schema == nil {
+		return nil, errors.New("anthropic: json_schema response format requires a schema")
+	}
+	if m, ok := schema.(map[string]any); ok {
+		return m, nil
+	}
+	raw, err := json.Marshal(schema)
+	if err != nil {
+		return nil, fmt.Errorf("anthropic: invalid response format schema: %w", err)
+	}
+	var out map[string]any
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return nil, fmt.Errorf("anthropic: invalid response format schema: %w", err)
+	}
+	return out, nil
 }
 
 func anthropicMessages(messages []openai.ChatCompletionMessageParamUnion) ([]anthropic.TextBlockParam, []anthropic.MessageParam, error) {
@@ -417,6 +457,9 @@ func anthropicTools(tools []openai.ChatCompletionToolUnionParam) ([]anthropic.To
 		tool := anthropic.ToolParam{Name: fn.Name}
 		if fn.Description.Valid() {
 			tool.Description = anthropic.String(fn.Description.Value)
+		}
+		if fn.Strict.Valid() {
+			tool.Strict = anthropic.Bool(fn.Strict.Value)
 		}
 		for key, value := range fn.Parameters {
 			switch key {

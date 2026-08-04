@@ -4,12 +4,15 @@ package integration
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"testing"
 
 	"github.com/lwlee2608/aiwire"
 	"github.com/openai/openai-go/v3"
+	"github.com/openai/openai-go/v3/shared"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 const (
@@ -151,4 +154,44 @@ func TestBedrock_ClaudeThinking(t *testing.T) {
 
 	t.Logf("Content: %s", result.Content)
 	logUsage(t, result.Usage)
+}
+
+func TestBedrock_ClaudeResponseFormat(t *testing.T) {
+	service := bedrockClaudeService(t)
+	messages := []openai.ChatCompletionMessageParamUnion{
+		openai.UserMessage("What is the capital of France and its population?"),
+	}
+
+	resp, err := service.Completions(context.Background(), messages, nil, aiwire.CompletionOption{
+		Model:           bedrockClaudeModel,
+		OmitTemperature: true,
+		ResponseFormat: openai.ChatCompletionNewParamsResponseFormatUnion{
+			OfJSONSchema: &shared.ResponseFormatJSONSchemaParam{
+				JSONSchema: shared.ResponseFormatJSONSchemaJSONSchemaParam{
+					Name:   "capital",
+					Strict: openai.Bool(true),
+					Schema: map[string]any{
+						"type": "object",
+						"properties": map[string]any{
+							"city":       map[string]any{"type": "string"},
+							"population": map[string]any{"type": "integer"},
+						},
+						"required":             []string{"city", "population"},
+						"additionalProperties": false,
+					},
+				},
+			},
+		},
+	})
+	require.NoError(t, err)
+
+	var out struct {
+		City       string `json:"city"`
+		Population int64  `json:"population"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(resp.Message.Content), &out))
+	assert.Equal(t, "Paris", out.City)
+	assert.Greater(t, out.Population, int64(0))
+
+	t.Logf("Content: %s", resp.Message.Content)
 }

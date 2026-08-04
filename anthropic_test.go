@@ -153,6 +153,81 @@ func TestAnthropicTools_MapsSchema(t *testing.T) {
 		"unrecognized schema keys must survive as extra fields")
 }
 
+func TestAnthropicTools_MapsStrict(t *testing.T) {
+	tools, err := anthropicTools([]openai.ChatCompletionToolUnionParam{
+		openai.ChatCompletionFunctionTool(shared.FunctionDefinitionParam{
+			Name:   "add",
+			Strict: openai.Bool(true),
+		}),
+		openai.ChatCompletionFunctionTool(shared.FunctionDefinitionParam{
+			Name: "sub",
+		}),
+	})
+
+	require.NoError(t, err)
+	require.Len(t, tools, 2)
+	assert.True(t, tools[0].OfTool.Strict.Value)
+	assert.False(t, tools[1].OfTool.Strict.Valid(), "an unset Strict must stay off the wire")
+}
+
+func TestAnthropicOutputConfig(t *testing.T) {
+	schema := map[string]any{
+		"type":       "object",
+		"properties": map[string]any{"answer": map[string]any{"type": "string"}},
+	}
+
+	t.Run("maps a json_schema format", func(t *testing.T) {
+		config, err := anthropicOutputConfig(openai.ChatCompletionNewParamsResponseFormatUnion{
+			OfJSONSchema: &shared.ResponseFormatJSONSchemaParam{
+				JSONSchema: shared.ResponseFormatJSONSchemaJSONSchemaParam{
+					Name:   "answer",
+					Strict: openai.Bool(true),
+					Schema: schema,
+				},
+			},
+		})
+		require.NoError(t, err)
+		assert.Equal(t, schema, config.Format.Schema)
+	})
+
+	t.Run("rejects a schema-less json_object format", func(t *testing.T) {
+		_, err := anthropicOutputConfig(openai.ChatCompletionNewParamsResponseFormatUnion{
+			OfJSONObject: &shared.ResponseFormatJSONObjectParam{},
+		})
+		assert.ErrorContains(t, err, "json_object")
+	})
+
+	t.Run("rejects a json_schema format with no schema", func(t *testing.T) {
+		_, err := anthropicOutputConfig(openai.ChatCompletionNewParamsResponseFormatUnion{
+			OfJSONSchema: &shared.ResponseFormatJSONSchemaParam{},
+		})
+		assert.ErrorContains(t, err, "requires a schema")
+	})
+
+	t.Run("text and unset formats are a no-op", func(t *testing.T) {
+		config, err := anthropicOutputConfig(openai.ChatCompletionNewParamsResponseFormatUnion{
+			OfText: &shared.ResponseFormatTextParam{},
+		})
+		require.NoError(t, err)
+		assert.Nil(t, config.Format.Schema)
+
+		config, err = anthropicOutputConfig(openai.ChatCompletionNewParamsResponseFormatUnion{})
+		require.NoError(t, err)
+		assert.Nil(t, config.Format.Schema)
+	})
+}
+
+func TestAnthropicParams_OmitsUnsetOutputConfig(t *testing.T) {
+	messages := []openai.ChatCompletionMessageParamUnion{openai.UserMessage("hi")}
+
+	params, err := anthropicParams(messages, nil, CompletionOption{Model: "m"})
+	require.NoError(t, err)
+
+	raw, err := json.Marshal(params)
+	require.NoError(t, err)
+	assert.NotContains(t, string(raw), "output_config")
+}
+
 func TestAnthropicStringSlice(t *testing.T) {
 	assert.Equal(t, []string{"a"}, anthropicStringSlice([]string{"a"}))
 	assert.Equal(t, []string{"a", "b"}, anthropicStringSlice([]any{"a", "b", 3}))
