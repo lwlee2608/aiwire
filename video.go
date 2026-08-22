@@ -24,10 +24,6 @@ const videoPollInterval = 5 * time.Second
 // images (image-to-video). It is separate from [ImageGeneration] and
 // [Completion] because video generation is asynchronous: OpenRouter's /videos
 // API submits a job and the result is polled until completion.
-//
-// GenerateVideo blocks until the job finishes. SubmitVideo and PollVideo
-// expose the same job as two independent calls, for callers that drive the
-// wait themselves (a durable workflow, a job queue, an HTTP poll endpoint).
 type VideoGeneration interface {
 	GenerateVideo(ctx context.Context, opt VideoOption) (VideoResponse, error)
 	SubmitVideo(ctx context.Context, opt VideoOption) (VideoJob, error)
@@ -52,9 +48,6 @@ type VideoOption struct {
 	Resolution  string            // e.g. "1080p"
 	ConfigExtra map[string]any    // extra top-level knobs (e.g. cfg_scale)
 
-	// PollInterval overrides how often [Service.GenerateVideo] polls for
-	// completion. Defaults to videoPollInterval when zero. Unused by
-	// SubmitVideo and PollVideo, which do not wait.
 	PollInterval time.Duration
 }
 
@@ -72,15 +65,11 @@ func VideoFrameFromBytes(mimeType string, data []byte, frameType VideoFrameType)
 	}
 }
 
-// VideoJob identifies an accepted video-generation job. The ID is stable for
-// the lifetime of the job and is the handle passed to [Service.PollVideo].
 type VideoJob struct {
 	ID     string
 	Status string
 }
 
-// VideoStatus is one observation of a video-generation job. Videos, Provider
-// and Usage are populated only once Done is true.
 type VideoStatus struct {
 	Done     bool
 	Status   string
@@ -139,9 +128,6 @@ func (s *Service) GenerateVideo(ctx context.Context, opt VideoOption) (VideoResp
 	}
 }
 
-// SubmitVideo starts a video-generation job and returns as soon as the
-// provider accepts it, without waiting for the clip to render. Poll the
-// returned job with [Service.PollVideo].
 func (s *Service) SubmitVideo(ctx context.Context, opt VideoOption) (VideoJob, error) {
 	var submit struct {
 		ID     string `json:"id"`
@@ -157,9 +143,6 @@ func (s *Service) SubmitVideo(ctx context.Context, opt VideoOption) (VideoJob, e
 	return VideoJob{ID: submit.ID, Status: submit.Status}, nil
 }
 
-// PollVideo reports on a job started by [Service.SubmitVideo]. It performs a
-// single request and does not wait: a job still rendering comes back with
-// Done false. A job that failed, was cancelled, or expired returns an error.
 func (s *Service) PollVideo(ctx context.Context, jobID string) (VideoStatus, error) {
 	if jobID == "" {
 		return VideoStatus{}, errors.New("aiwire: video job id is empty")
