@@ -14,7 +14,10 @@ import (
 	"github.com/openai/openai-go/v3/option"
 )
 
-var _ VideoGeneration = (*Service)(nil)
+var (
+	_ VideoGeneration = (*Service)(nil)
+	_ VideoJobs       = (*Service)(nil)
+)
 
 // videoPollInterval is the default delay between polls while a video job runs.
 // Callers can override it via VideoOption.PollInterval.
@@ -26,6 +29,10 @@ const videoPollInterval = 5 * time.Second
 // API submits a job and the result is polled until completion.
 type VideoGeneration interface {
 	GenerateVideo(ctx context.Context, opt VideoOption) (VideoResponse, error)
+}
+
+// VideoJobs exposes video generation as a job the caller polls itself.
+type VideoJobs interface {
 	SubmitVideo(ctx context.Context, opt VideoOption) (VideoJob, error)
 	PollVideo(ctx context.Context, jobID string) (VideoStatus, error)
 }
@@ -68,6 +75,21 @@ func VideoFrameFromBytes(mimeType string, data []byte, frameType VideoFrameType)
 type VideoJob struct {
 	ID     string
 	Status string
+}
+
+// VideoJobError reports that a video job reached a terminal state and will
+// never produce a clip. A [VideoJobs] caller polling in a loop should stop on
+// this error; any other error may be transient and is safe to retry.
+type VideoJobError struct {
+	Status  string
+	Message string
+}
+
+func (e *VideoJobError) Error() string {
+	if e.Message != "" {
+		return fmt.Sprintf("aiwire: video generation %s: %s", e.Status, e.Message)
+	}
+	return fmt.Sprintf("aiwire: video generation %s", e.Status)
 }
 
 type VideoStatus struct {
@@ -169,7 +191,7 @@ func (s *Service) PollVideo(ctx context.Context, jobID string) (VideoStatus, err
 			}
 		}
 		if len(videos) == 0 {
-			return VideoStatus{}, errors.New("aiwire: completed video generation returned no video URLs")
+			return VideoStatus{}, &VideoJobError{Status: result.Status, Message: "returned no video URLs"}
 		}
 		provider := strings.TrimSpace(result.Provider)
 		if provider == "" {
@@ -183,10 +205,7 @@ func (s *Service) PollVideo(ctx context.Context, jobID string) (VideoStatus, err
 			Usage:    UsageFromOpenAI(result.Usage),
 		}, nil
 	case "failed", "cancelled", "expired":
-		if result.Error != "" {
-			return VideoStatus{}, fmt.Errorf("aiwire: video generation %s: %s", result.Status, result.Error)
-		}
-		return VideoStatus{}, fmt.Errorf("aiwire: video generation %s", result.Status)
+		return VideoStatus{}, &VideoJobError{Status: result.Status, Message: result.Error}
 	}
 
 	return VideoStatus{Status: result.Status}, nil
