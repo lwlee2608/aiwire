@@ -14,6 +14,8 @@ import (
 	"github.com/openai/openai-go/v3/option"
 )
 
+var _ VideoGeneration = (*Service)(nil)
+
 // videoPollInterval is the default delay between polls while a video job runs.
 // Callers can override it via VideoOption.PollInterval.
 const videoPollInterval = 5 * time.Second
@@ -22,8 +24,14 @@ const videoPollInterval = 5 * time.Second
 // images (image-to-video). It is separate from [ImageGeneration] and
 // [Completion] because video generation is asynchronous: OpenRouter's /videos
 // API submits a job and the result is polled until completion.
+//
+// GenerateVideo blocks until the job finishes. SubmitVideo and PollVideo
+// expose the same job as two independent calls, for callers that drive the
+// wait themselves (a durable workflow, a job queue, an HTTP poll endpoint).
 type VideoGeneration interface {
 	GenerateVideo(ctx context.Context, opt VideoOption) (VideoResponse, error)
+	SubmitVideo(ctx context.Context, opt VideoOption) (VideoJob, error)
+	PollVideo(ctx context.Context, jobID string) (VideoStatus, error)
 }
 
 // VideoFrameType selects which end of the clip a frame image anchors.
@@ -44,8 +52,9 @@ type VideoOption struct {
 	Resolution  string            // e.g. "1080p"
 	ConfigExtra map[string]any    // extra top-level knobs (e.g. cfg_scale)
 
-	// PollInterval overrides how often the job is polled for completion.
-	// Defaults to videoPollInterval when zero.
+	// PollInterval overrides how often [Service.GenerateVideo] polls for
+	// completion. Defaults to videoPollInterval when zero. Unused by
+	// SubmitVideo and PollVideo, which do not wait.
 	PollInterval time.Duration
 }
 
@@ -61,6 +70,23 @@ func VideoFrameFromBytes(mimeType string, data []byte, frameType VideoFrameType)
 		URL:       "data:" + mimeType + ";base64," + base64.StdEncoding.EncodeToString(data),
 		FrameType: frameType,
 	}
+}
+
+// VideoJob identifies an accepted video-generation job. The ID is stable for
+// the lifetime of the job and is the handle passed to [Service.PollVideo].
+type VideoJob struct {
+	ID     string
+	Status string
+}
+
+// VideoStatus is one observation of a video-generation job. Videos, Provider
+// and Usage are populated only once Done is true.
+type VideoStatus struct {
+	Done     bool
+	Status   string
+	Videos   []GeneratedVideo
+	Provider string
+	Usage    Usage
 }
 
 // VideoResponse is the result of a completed video-generation request.
@@ -79,6 +105,111 @@ type GeneratedVideo struct {
 // /videos endpoint, polls until the job completes, then returns the rendered
 // clip URLs. It blocks until completion, failure, or ctx cancellation.
 func (s *Service) GenerateVideo(ctx context.Context, opt VideoOption) (VideoResponse, error) {
+	job, err := s.SubmitVideo(ctx, opt)
+	if err != nil {
+		return VideoResponse{}, err
+	}
+
+	interval := opt.PollInterval
+	if interval <= 0 {
+		interval = videoPollInterval
+	}
+
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		status, err := s.PollVideo(ctx, job.ID)
+		if err != nil {
+			return VideoResponse{}, err
+		}
+		if status.Done {
+			return VideoResponse{
+				Videos:   status.Videos,
+				Provider: status.Provider,
+				Usage:    status.Usage,
+			}, nil
+		}
+
+		select {
+		case <-ctx.Done():
+			return VideoResponse{}, ctx.Err()
+		case <-ticker.C:
+		}
+	}
+}
+
+// SubmitVideo starts a video-generation job and returns as soon as the
+// provider accepts it, without waiting for the clip to render. Poll the
+// returned job with [Service.PollVideo].
+func (s *Service) SubmitVideo(ctx context.Context, opt VideoOption) (VideoJob, error) {
+	var submit struct {
+		ID     string `json:"id"`
+		Status string `json:"status"`
+	}
+	if err := s.client.Post(ctx, "videos", videoRequestBody(opt), &submit); err != nil {
+		return VideoJob{}, err
+	}
+	if submit.ID == "" {
+		return VideoJob{}, errors.New("aiwire: video generation returned no job id")
+	}
+
+	return VideoJob{ID: submit.ID, Status: submit.Status}, nil
+}
+
+// PollVideo reports on a job started by [Service.SubmitVideo]. It performs a
+// single request and does not wait: a job still rendering comes back with
+// Done false. A job that failed, was cancelled, or expired returns an error.
+func (s *Service) PollVideo(ctx context.Context, jobID string) (VideoStatus, error) {
+	if jobID == "" {
+		return VideoStatus{}, errors.New("aiwire: video job id is empty")
+	}
+
+	var response *http.Response
+	var result struct {
+		Status       string                 `json:"status"`
+		UnsignedURLs []string               `json:"unsigned_urls"`
+		Error        string                 `json:"error"`
+		Provider     string                 `json:"provider"`
+		Usage        openai.CompletionUsage `json:"usage"`
+	}
+	if err := s.client.Get(ctx, "videos/"+jobID, nil, &result, option.WithResponseInto(&response)); err != nil {
+		return VideoStatus{}, err
+	}
+
+	switch result.Status {
+	case "completed":
+		videos := make([]GeneratedVideo, 0, len(result.UnsignedURLs))
+		for _, u := range result.UnsignedURLs {
+			if u != "" {
+				videos = append(videos, GeneratedVideo{URL: u})
+			}
+		}
+		if len(videos) == 0 {
+			return VideoStatus{}, errors.New("aiwire: completed video generation returned no video URLs")
+		}
+		provider := strings.TrimSpace(result.Provider)
+		if provider == "" {
+			provider = extractProviderFromHeader(response)
+		}
+		return VideoStatus{
+			Done:     true,
+			Status:   result.Status,
+			Videos:   videos,
+			Provider: provider,
+			Usage:    UsageFromOpenAI(result.Usage),
+		}, nil
+	case "failed", "cancelled", "expired":
+		if result.Error != "" {
+			return VideoStatus{}, fmt.Errorf("aiwire: video generation %s: %s", result.Status, result.Error)
+		}
+		return VideoStatus{}, fmt.Errorf("aiwire: video generation %s", result.Status)
+	}
+
+	return VideoStatus{Status: result.Status}, nil
+}
+
+func videoRequestBody(opt VideoOption) map[string]any {
 	body := map[string]any{
 		"model":  opt.Model,
 		"prompt": opt.Prompt,
@@ -105,73 +236,5 @@ func (s *Service) GenerateVideo(ctx context.Context, opt VideoOption) (VideoResp
 	setImageParameter(body, "resolution", opt.Resolution)
 	maps.Copy(body, opt.ConfigExtra)
 
-	var submit struct {
-		ID     string `json:"id"`
-		Status string `json:"status"`
-	}
-	if err := s.client.Post(ctx, "videos", body, &submit); err != nil {
-		return VideoResponse{}, err
-	}
-	if submit.ID == "" {
-		return VideoResponse{}, errors.New("aiwire: video generation returned no job id")
-	}
-
-	interval := opt.PollInterval
-	if interval <= 0 {
-		interval = videoPollInterval
-	}
-	return s.pollVideo(ctx, submit.ID, interval)
-}
-
-func (s *Service) pollVideo(ctx context.Context, jobID string, interval time.Duration) (VideoResponse, error) {
-	path := "videos/" + jobID
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-
-	for {
-		var response *http.Response
-		var result struct {
-			Status       string                 `json:"status"`
-			UnsignedURLs []string               `json:"unsigned_urls"`
-			Error        string                 `json:"error"`
-			Provider     string                 `json:"provider"`
-			Usage        openai.CompletionUsage `json:"usage"`
-		}
-		if err := s.client.Get(ctx, path, nil, &result, option.WithResponseInto(&response)); err != nil {
-			return VideoResponse{}, err
-		}
-
-		switch result.Status {
-		case "completed":
-			videos := make([]GeneratedVideo, 0, len(result.UnsignedURLs))
-			for _, u := range result.UnsignedURLs {
-				if u != "" {
-					videos = append(videos, GeneratedVideo{URL: u})
-				}
-			}
-			if len(videos) == 0 {
-				return VideoResponse{}, errors.New("aiwire: completed video generation returned no video URLs")
-			}
-			provider := strings.TrimSpace(result.Provider)
-			if provider == "" {
-				provider = extractProviderFromHeader(response)
-			}
-			return VideoResponse{
-				Videos:   videos,
-				Provider: provider,
-				Usage:    UsageFromOpenAI(result.Usage),
-			}, nil
-		case "failed", "cancelled", "expired":
-			if result.Error != "" {
-				return VideoResponse{}, fmt.Errorf("aiwire: video generation %s: %s", result.Status, result.Error)
-			}
-			return VideoResponse{}, fmt.Errorf("aiwire: video generation %s", result.Status)
-		}
-
-		select {
-		case <-ctx.Done():
-			return VideoResponse{}, ctx.Err()
-		case <-ticker.C:
-		}
-	}
+	return body
 }
