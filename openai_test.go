@@ -1,10 +1,14 @@
 package aiwire
 
 import (
+	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/packages/respjson"
 )
 
@@ -237,5 +241,41 @@ func TestAssistantMessageWithReasoning_RawTakesPrecedence(t *testing.T) {
 	}
 	if !strings.Contains(string(bytes), "keep-me") {
 		t.Fatalf("raw passthrough lost: %s", bytes)
+	}
+}
+
+func TestCompletionsReturnsFinishReason(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/chat/completions" {
+			t.Errorf("path = %q, want /chat/completions", r.URL.Path)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"id":"chat-1",
+			"object":"chat.completion",
+			"created":1,
+			"model":"test-model",
+			"choices":[{
+				"index":0,
+				"finish_reason":"content_filter",
+				"message":{"role":"assistant","content":"filtered"}
+			}],
+			"usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3}
+		}`))
+	}))
+	defer server.Close()
+
+	response, err := NewOpenAIService("test-key", server.URL).Completions(
+		context.Background(),
+		[]openai.ChatCompletionMessageParamUnion{openai.UserMessage("test")},
+		nil,
+		CompletionOption{Model: "test-model"},
+	)
+	if err != nil {
+		t.Fatalf("Completions: %v", err)
+	}
+	if response.FinishReason != "content_filter" {
+		t.Errorf("FinishReason = %q, want content_filter", response.FinishReason)
 	}
 }

@@ -309,6 +309,7 @@ func (s *Service) ParamsCompletions(ctx context.Context, params openai.ChatCompl
 		Message:          message,
 		Reasoning:        reasoningContent,
 		ReasoningDetails: reasoningDetails,
+		FinishReason:     completion.Choices[0].FinishReason,
 		Provider:         routedProvider,
 		Usage:            UsageFromOpenAI(completion.Usage),
 	}, nil
