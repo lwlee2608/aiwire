@@ -102,6 +102,7 @@ func (s *AnthropicService) Completions(
 		Message:          out,
 		Reasoning:        reasoning.String(),
 		ReasoningDetails: details,
+		FinishReason:     anthropicFinishReason(string(message.StopReason)),
 		Provider:         anthropicProvider,
 		Usage:            anthropicUsage(message.Usage),
 	}, nil
