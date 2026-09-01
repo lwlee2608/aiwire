@@ -73,6 +73,7 @@ type CompletionResponse struct {
 	Reasoning        string
 	ReasoningDetails []ReasoningDetail
 	Provider         string
+	FinishReason     string
 	Usage            Usage
 }
 
