@@ -15,6 +15,7 @@ A Go library for building AI agents with tool-calling support. Works with any Op
 - Provider-agnostic via the `Completion` interface
 - Image generation and editing via a separate `ImageGeneration` interface (OpenRouter)
 - Video generation via a `VideoGeneration` interface (OpenRouter) — blocking `GenerateVideo`, or the `VideoJobs` interface (`SubmitVideo` / `PollVideo`) to drive the wait yourself
+- `Decisions` interface for typed decision models like `typesafe/jev-1.13` — choice / score / yes-no answers instead of text (OpenRouter `/api/alpha/decisions`, **experimental**)
 - Reasoning capture and replay across loop iterations (OpenRouter — see [docs/reasoning.md](docs/reasoning.md))
 - `Responses` interface for OpenAI's `/v1/responses` shape (**experimental** — see note below)
 
