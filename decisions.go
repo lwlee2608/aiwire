@@ -3,6 +3,7 @@ package aiwire
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -111,6 +112,12 @@ func (s *Service) Decide(ctx context.Context, opt DecisionOption) (DecisionRespo
 	opts := append(buildRequestOptions(opt.Provider, nil), option.WithResponseInto(&response))
 	if err := s.client.Post(ctx, "../alpha/decisions", body, &result, opts...); err != nil {
 		return DecisionResponse{}, err
+	}
+
+	for name := range opt.Questions {
+		if _, ok := result.Answers[name]; !ok {
+			return DecisionResponse{}, fmt.Errorf("aiwire: decisions response missing answer for question %q", name)
+		}
 	}
 
 	provider := strings.TrimSpace(result.Provider)

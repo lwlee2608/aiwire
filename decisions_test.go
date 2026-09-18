@@ -8,6 +8,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestDecideSendsQuestionsAndParsesAnswers(t *testing.T) {
@@ -100,6 +102,25 @@ func TestDecideFallsBackToProviderHeader(t *testing.T) {
 	if resp.Provider != "TypeSafe" {
 		t.Errorf("provider = %q, want TypeSafe from header", resp.Provider)
 	}
+}
+
+func TestDecideRejectsMissingAnswer(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"model":"m","answers":{"present":{"type":"noul","noul":0.5}},"usage":{"input_tokens":1,"output_tokens":1}}`))
+	}))
+	defer server.Close()
+
+	resp, err := NewOpenAIService("test-key", server.URL+"/api/v1").Decide(context.Background(), DecisionOption{
+		Model: "m",
+		State: "x",
+		Questions: map[string]DecisionQuestion{
+			"present": NoulQuestion("Present?"),
+			"missing": NoulQuestion("Missing?"),
+		},
+	})
+	require.EqualError(t, err, `aiwire: decisions response missing answer for question "missing"`)
+	require.Equal(t, DecisionResponse{}, resp)
 }
 
 func TestDecideRequiresQuestions(t *testing.T) {
