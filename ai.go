@@ -21,6 +21,7 @@ type CompletionOption struct {
 	MaxTokens       *int
 	ResponseFormat  openai.ChatCompletionNewParamsResponseFormatUnion
 	Reasoning       *ReasoningOption
+	PromptCacheKey  string
 }
 
 // ProviderDataCollection controls whether the upstream provider may retain request data.
@@ -135,6 +136,7 @@ type ResponsesOption struct {
 	Reasoning          *ReasoningOption
 	Include            []string
 	ResponseFormat     responses.ResponseFormatTextConfigUnionParam
+	PromptCacheKey     string
 }
 
 // Experimental: see [ResponsesOption].

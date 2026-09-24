@@ -279,3 +279,35 @@ func TestCompletionsReturnsFinishReason(t *testing.T) {
 		t.Errorf("FinishReason = %q, want content_filter", response.FinishReason)
 	}
 }
+
+func TestCompletionsSendsPromptCacheKey(t *testing.T) {
+	var got struct {
+		PromptCacheKey *string `json:"prompt_cache_key"`
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+			t.Errorf("decode body: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"chat-1","object":"chat.completion","created":1,"model":"m",
+			"choices":[{"index":0,"finish_reason":"stop","message":{"role":"assistant","content":"hi"}}]}`))
+	}))
+	defer server.Close()
+	service := NewOpenAIService("test-key", server.URL)
+	messages := []openai.ChatCompletionMessageParamUnion{openai.UserMessage("test")}
+
+	if _, err := service.Completions(context.Background(), messages, nil, CompletionOption{Model: "m", PromptCacheKey: "thread-1"}); err != nil {
+		t.Fatalf("Completions: %v", err)
+	}
+	if got.PromptCacheKey == nil || *got.PromptCacheKey != "thread-1" {
+		t.Errorf("prompt_cache_key = %v, want thread-1", got.PromptCacheKey)
+	}
+
+	got.PromptCacheKey = nil
+	if _, err := service.Completions(context.Background(), messages, nil, CompletionOption{Model: "m"}); err != nil {
+		t.Fatalf("Completions: %v", err)
+	}
+	if got.PromptCacheKey != nil {
+		t.Errorf("prompt_cache_key = %q, want omitted", *got.PromptCacheKey)
+	}
+}

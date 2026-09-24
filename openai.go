@@ -335,6 +335,10 @@ func (s *Service) Completions(
 		params.MaxTokens = openai.Int(int64(*option.MaxTokens))
 	}
 
+	if option.PromptCacheKey != "" {
+		params.PromptCacheKey = openai.String(option.PromptCacheKey)
+	}
+
 	if len(tools) > 0 {
 		params.Tools = tools
 	}
@@ -494,6 +498,10 @@ func (s *Service) CompletionsStream(
 
 	if option.MaxTokens != nil {
 		params.MaxTokens = openai.Int(int64(*option.MaxTokens))
+	}
+
+	if option.PromptCacheKey != "" {
+		params.PromptCacheKey = openai.String(option.PromptCacheKey)
 	}
 
 	if len(tools) > 0 {

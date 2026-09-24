@@ -52,6 +52,9 @@ func buildResponsesParams(input responses.ResponseInputParam, tools []responses.
 	if opt.Store != nil {
 		params.Store = openai.Bool(*opt.Store)
 	}
+	if opt.PromptCacheKey != "" {
+		params.PromptCacheKey = openai.String(opt.PromptCacheKey)
+	}
 	if len(opt.Include) > 0 {
 		inc := make([]responses.ResponseIncludable, len(opt.Include))
 		for i, s := range opt.Include {
