@@ -183,7 +183,20 @@ type Responses interface {
 	) error
 }
 
+// EmbeddingInputType marks text as a search query or a stored document.
+// Voyage uses it to tune retrieval; OpenAI and OpenRouter ignore it.
+type EmbeddingInputType string
+
+const (
+	EmbeddingInputQuery    EmbeddingInputType = "query"
+	EmbeddingInputDocument EmbeddingInputType = "document"
+)
+
+type EmbeddingOption struct {
+	InputType EmbeddingInputType
+}
+
 type Embedding interface {
-	Embedding(ctx context.Context, input string, model string) ([]float32, error)
-	EmbeddingBatch(ctx context.Context, inputs []string, model string) ([][]float32, error)
+	Embedding(ctx context.Context, input string, model string, opts ...EmbeddingOption) ([]float32, error)
+	EmbeddingBatch(ctx context.Context, inputs []string, model string, opts ...EmbeddingOption) ([][]float32, error)
 }

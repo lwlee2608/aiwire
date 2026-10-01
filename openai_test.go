@@ -311,3 +311,38 @@ func TestCompletionsSendsPromptCacheKey(t *testing.T) {
 		t.Errorf("prompt_cache_key = %q, want omitted", *got.PromptCacheKey)
 	}
 }
+
+func TestEmbeddingBatchSendsInputType(t *testing.T) {
+	var got map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = nil
+		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+			t.Errorf("decode body: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"object":"list","model":"m","data":[{"object":"embedding","index":0,"embedding":[0.1,0.2]}]}`))
+	}))
+	defer server.Close()
+	service := NewOpenAIService("test-key", server.URL)
+
+	if _, err := service.EmbeddingBatch(context.Background(), []string{"a"}, "m", EmbeddingOption{InputType: EmbeddingInputDocument}); err != nil {
+		t.Fatalf("EmbeddingBatch: %v", err)
+	}
+	if got["input_type"] != "document" {
+		t.Errorf("input_type = %v, want document", got["input_type"])
+	}
+
+	if _, err := service.Embedding(context.Background(), "a", "m", EmbeddingOption{InputType: EmbeddingInputQuery}); err != nil {
+		t.Fatalf("Embedding: %v", err)
+	}
+	if got["input_type"] != "query" {
+		t.Errorf("input_type = %v, want query", got["input_type"])
+	}
+
+	if _, err := service.EmbeddingBatch(context.Background(), []string{"a"}, "m"); err != nil {
+		t.Fatalf("EmbeddingBatch: %v", err)
+	}
+	if _, ok := got["input_type"]; ok {
+		t.Errorf("input_type = %v, want omitted", got["input_type"])
+	}
+}
