@@ -515,13 +515,23 @@ func (s *Service) Models(ctx context.Context) (*pagination.Page[openai.Model], e
 	return s.client.Models.List(ctx)
 }
 
-func (s *Service) Embedding(ctx context.Context, input string, model string) ([]float32, error) {
+func embeddingRequestOptions(opts []EmbeddingOption) []option.RequestOption {
+	var reqOpts []option.RequestOption
+	for _, o := range opts {
+		if o.InputType != "" {
+			reqOpts = append(reqOpts, option.WithJSONSet("input_type", string(o.InputType)))
+		}
+	}
+	return reqOpts
+}
+
+func (s *Service) Embedding(ctx context.Context, input string, model string, opts ...EmbeddingOption) ([]float32, error) {
 	embedding, err := s.client.Embeddings.New(ctx, openai.EmbeddingNewParams{
 		Model: openai.EmbeddingModel(model),
 		Input: openai.EmbeddingNewParamsInputUnion{
 			OfString: openai.String(input),
 		},
-	})
+	}, embeddingRequestOptions(opts)...)
 	if err != nil {
 		return nil, err
 	}
@@ -539,13 +549,13 @@ func (s *Service) Embedding(ctx context.Context, input string, model string) ([]
 	return f32, nil
 }
 
-func (s *Service) EmbeddingBatch(ctx context.Context, inputs []string, model string) ([][]float32, error) {
+func (s *Service) EmbeddingBatch(ctx context.Context, inputs []string, model string, opts ...EmbeddingOption) ([][]float32, error) {
 	embedding, err := s.client.Embeddings.New(ctx, openai.EmbeddingNewParams{
 		Model: openai.EmbeddingModel(model),
 		Input: openai.EmbeddingNewParamsInputUnion{
 			OfArrayOfStrings: inputs,
 		},
-	})
+	}, embeddingRequestOptions(opts)...)
 	if err != nil {
 		return nil, err
 	}
