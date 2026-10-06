@@ -1,7 +1,7 @@
 GO ?= $(shell which go 2>/dev/null)
 
 .PHONY: all help build clean test test-race vet fmt \
-	test-openai test-openrouter test-zai test-cerebras test-bedrock test-anthropic test-voyage test-integration test-usage test-reasoning
+	test-openai test-openrouter test-zai test-cerebras test-bedrock test-anthropic test-voyage test-velocirouter test-integration test-usage test-reasoning
 
 all: clean build test
 
@@ -22,6 +22,7 @@ help:
 	@echo "  test-bedrock     Run integration tests against AWS Bedrock (needs AWS_BEARER_TOKEN_BEDROCK)"
 	@echo "  test-anthropic   Run integration tests against Anthropic   (needs ANTHROPIC_API_KEY)"
 	@echo "  test-voyage      Run integration tests against Voyage      (needs VOYAGE_API_KEY)"
+	@echo "  test-velocirouter Run integration tests against VelociRouter (needs VELOCIROUTER_API_KEY)"
 	@echo "  test-usage       Run usage/cache-token tests                (needs OPENAI_API_KEY and OPENROUTER_API_KEY)"
 	@echo "  test-reasoning   Run reasoning integration tests           (needs OPENROUTER_API_KEY)"
 	@echo "  test-integration Run all integration tests"
@@ -66,10 +67,13 @@ test-anthropic:
 test-voyage:
 	$(GO) test -v -tags=integration -count=1 -run '^TestVoyage_' ./integration/...
 
+test-velocirouter:
+	$(GO) test -v -tags=integration -count=1 -run '^TestVelociRouter_' ./integration/...
+
 test-usage:
 	$(GO) test -v -tags=integration -count=1 -run '^TestUsage_' ./integration/...
 
 test-reasoning:
 	$(GO) test -v -tags=integration -count=1 -run '^TestReasoning_' ./integration/...
 
-test-integration: test-openai test-openrouter test-zai test-cerebras test-bedrock test-anthropic test-voyage test-reasoning
+test-integration: test-openai test-openrouter test-zai test-cerebras test-bedrock test-anthropic test-voyage test-velocirouter test-reasoning
