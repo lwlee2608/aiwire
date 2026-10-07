@@ -82,12 +82,14 @@ type DecisionAnswer struct {
 	Confidence    float64              `json:"confidence"`
 }
 
-// Probability returns the probability of a choice option or score level,
-// looking up score levels by name through Legend. It returns 0 for unknown
-// labels and for noul answers.
+// Probability returns the probability of a choice option or score level.
+// When Legend is present, label is matched against level names only, so
+// numeric level names never collide with index keys; without Legend, label is
+// used as the Probabilities key directly. It returns 0 for unknown labels and
+// for noul answers.
 func (a DecisionAnswer) Probability(label string) float64 {
-	if p, ok := a.Probabilities[label]; ok {
-		return p
+	if len(a.Legend) == 0 {
+		return a.Probabilities[label]
 	}
 	for idx, name := range a.Legend {
 		if name == label {

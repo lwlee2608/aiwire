@@ -146,8 +146,24 @@ func TestDecisionAnswerProbability(t *testing.T) {
 		Probabilities: map[string]float64{"0": 0.02, "1": 0.04, "2": 0.36, "3": 0.58},
 	}
 	require.Equal(t, 0.58, score.Probability("critical"))
-	require.Equal(t, 0.58, score.Probability("3"))
+	require.Equal(t, 0.0, score.Probability("3"))
 	require.Equal(t, 0.0, score.Probability("unknown"))
+
+	numericScore := DecisionAnswer{
+		Type:          DecisionScore,
+		Legend:        map[string]string{"0": "1", "1": "2", "2": "3"},
+		Probabilities: map[string]float64{"0": 0.1, "1": 0.2, "2": 0.7},
+	}
+	require.Equal(t, 0.1, numericScore.Probability("1"))
+	require.Equal(t, 0.7, numericScore.Probability("3"))
+	require.Equal(t, 0.0, numericScore.Probability("0"))
+
+	scoreWithoutLegend := DecisionAnswer{
+		Type:          DecisionScore,
+		Probabilities: map[string]float64{"0": 0.2, "1": 0.8},
+	}
+	require.Equal(t, 0.8, scoreWithoutLegend.Probability("1"))
+	require.Equal(t, 0.0, scoreWithoutLegend.Probability("high"))
 
 	noul := DecisionAnswer{Type: DecisionNoul, Noul: 0.86}
 	require.Equal(t, 0.0, noul.Probability("yes"))
