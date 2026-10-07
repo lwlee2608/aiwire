@@ -3,6 +3,7 @@ package aiwire
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -10,6 +11,8 @@ import (
 
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/packages/respjson"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func fieldsFromJSON(t *testing.T, raw string) map[string]respjson.Field {
@@ -345,4 +348,42 @@ func TestEmbeddingBatchSendsInputType(t *testing.T) {
 	if _, ok := got["input_type"]; ok {
 		t.Errorf("input_type = %v, want omitted", got["input_type"])
 	}
+}
+
+func TestCompletionsFillsEmptyToolArguments(t *testing.T) {
+	const toolCall = `{"index":0,"id":"call_1","type":"function","function":{"name":"list_items","arguments":""}}`
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Stream bool `json:"stream"`
+		}
+		assert.NoError(t, json.NewDecoder(r.Body).Decode(&body))
+		if body.Stream {
+			w.Header().Set("Content-Type", "text/event-stream")
+			_, _ = fmt.Fprintf(w, `data: {"id":"c","object":"chat.completion.chunk","created":1,"model":"m",`+
+				`"choices":[{"index":0,"delta":{"tool_calls":[%s]},"finish_reason":"tool_calls"}]}`+"\n\ndata: [DONE]\n\n", toolCall)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprintf(w, `{"id":"c","object":"chat.completion","created":1,"model":"m",
+			"choices":[{"index":0,"finish_reason":"tool_calls","message":{"role":"assistant","tool_calls":[%s]}}]}`, toolCall)
+	}))
+	defer server.Close()
+	service := NewOpenAIService("test-key", server.URL)
+	messages := []openai.ChatCompletionMessageParamUnion{openai.UserMessage("test")}
+
+	response, err := service.Completions(context.Background(), messages, nil, CompletionOption{Model: "m"})
+	require.NoError(t, err)
+	require.Len(t, response.Message.ToolCalls, 1)
+	assert.Equal(t, "{}", response.Message.ToolCalls[0].Function.Arguments)
+
+	var streamed []openai.ChatCompletionMessageToolCallUnion
+	err = service.CompletionsStream(context.Background(), messages, nil, CompletionOption{Model: "m"}, func(chunk StreamChunk) error {
+		if len(chunk.ToolCalls) > 0 {
+			streamed = chunk.ToolCalls
+		}
+		return nil
+	})
+	require.NoError(t, err)
+	require.Len(t, streamed, 1)
+	assert.Equal(t, "{}", streamed[0].Function.Arguments)
 }

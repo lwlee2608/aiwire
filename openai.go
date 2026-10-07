@@ -281,6 +281,16 @@ func (a *reasoningAccum) finalize() []ReasoningDetail {
 	return out
 }
 
+// Some OpenAI-compatible providers send "" instead of "{}" for tools without
+// parameters, which is unparseable and can be rejected when replayed in history.
+func fillEmptyToolArguments(calls []openai.ChatCompletionMessageToolCallUnion) {
+	for i := range calls {
+		if calls[i].Function.Arguments == "" {
+			calls[i].Function.Arguments = "{}"
+		}
+	}
+}
+
 // ParamsCompletions sends a chat completion request using raw OpenAI params.
 // Prefer Completions unless you need fields not exposed by CompletionOption.
 func (s *Service) ParamsCompletions(ctx context.Context, params openai.ChatCompletionNewParams, provider *ProviderOption, reasoning *ReasoningOption) (CompletionResponse, error) {
@@ -300,6 +310,7 @@ func (s *Service) ParamsCompletions(ctx context.Context, params openai.ChatCompl
 	}
 
 	message := completion.Choices[0].Message
+	fillEmptyToolArguments(message.ToolCalls)
 	reasoningContent := extractReasoning(message.JSON.ExtraFields)
 	reasoningDetails := extractReasoningDetails(message.JSON.ExtraFields)
 
@@ -445,6 +456,7 @@ func (s *Service) ParamsCompletionsStream(ctx context.Context, params openai.Cha
 			for _, tc := range toolCallsMap {
 				toolCalls = append(toolCalls, *tc)
 			}
+			fillEmptyToolArguments(toolCalls)
 			streamChunk.ToolCalls = toolCalls
 		}
 
