@@ -70,7 +70,8 @@ type DecisionResponse struct {
 }
 
 // DecisionAnswer is a typed answer; Type selects which of Noul, Choice, or
-// Score is populated. Probabilities and Confidence are absent for noul.
+// Score is populated. Fields that do not apply to Type are zero, including
+// Confidence for noul, so check Type before reading them.
 type DecisionAnswer struct {
 	Type          DecisionQuestionType `json:"type"`
 	Noul          float64              `json:"noul"`
@@ -79,6 +80,21 @@ type DecisionAnswer struct {
 	Legend        map[string]string    `json:"legend,omitempty"`
 	Probabilities map[string]float64   `json:"probabilities,omitempty"`
 	Confidence    float64              `json:"confidence"`
+}
+
+// Probability returns the probability of a choice option or score level,
+// looking up score levels by name through Legend. It returns 0 for unknown
+// labels and for noul answers.
+func (a DecisionAnswer) Probability(label string) float64 {
+	if p, ok := a.Probabilities[label]; ok {
+		return p
+	}
+	for idx, name := range a.Legend {
+		if name == label {
+			return a.Probabilities[idx]
+		}
+	}
+	return 0
 }
 
 func (s *Service) Decide(ctx context.Context, opt DecisionOption) (DecisionResponse, error) {

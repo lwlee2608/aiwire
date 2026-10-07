@@ -129,3 +129,26 @@ func TestDecideRequiresQuestions(t *testing.T) {
 		t.Fatalf("error = %v, want missing questions error", err)
 	}
 }
+
+func TestDecisionAnswerProbability(t *testing.T) {
+	choice := DecisionAnswer{
+		Type:          DecisionChoice,
+		Choice:        "block",
+		Probabilities: map[string]float64{"block": 0.73, "comment": 0.26, "approve": 0.01},
+	}
+	require.Equal(t, 0.73, choice.Probability("block"))
+	require.Equal(t, 0.0, choice.Probability("unknown"))
+
+	score := DecisionAnswer{
+		Type:          DecisionScore,
+		Score:         2.5,
+		Legend:        map[string]string{"0": "none", "1": "minor", "2": "major", "3": "critical"},
+		Probabilities: map[string]float64{"0": 0.02, "1": 0.04, "2": 0.36, "3": 0.58},
+	}
+	require.Equal(t, 0.58, score.Probability("critical"))
+	require.Equal(t, 0.58, score.Probability("3"))
+	require.Equal(t, 0.0, score.Probability("unknown"))
+
+	noul := DecisionAnswer{Type: DecisionNoul, Noul: 0.86}
+	require.Equal(t, 0.0, noul.Probability("yes"))
+}
