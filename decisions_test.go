@@ -129,3 +129,42 @@ func TestDecideRequiresQuestions(t *testing.T) {
 		t.Fatalf("error = %v, want missing questions error", err)
 	}
 }
+
+func TestDecisionAnswerProbability(t *testing.T) {
+	choice := DecisionAnswer{
+		Type:          DecisionChoice,
+		Choice:        "block",
+		Probabilities: map[string]float64{"block": 0.73, "comment": 0.26, "approve": 0.01},
+	}
+	require.Equal(t, 0.73, choice.Probability("block"))
+	require.Equal(t, 0.0, choice.Probability("unknown"))
+
+	score := DecisionAnswer{
+		Type:          DecisionScore,
+		Score:         2.5,
+		Legend:        map[string]string{"0": "none", "1": "minor", "2": "major", "3": "critical"},
+		Probabilities: map[string]float64{"0": 0.02, "1": 0.04, "2": 0.36, "3": 0.58},
+	}
+	require.Equal(t, 0.58, score.Probability("critical"))
+	require.Equal(t, 0.0, score.Probability("3"))
+	require.Equal(t, 0.0, score.Probability("unknown"))
+
+	numericScore := DecisionAnswer{
+		Type:          DecisionScore,
+		Legend:        map[string]string{"0": "1", "1": "2", "2": "3"},
+		Probabilities: map[string]float64{"0": 0.1, "1": 0.2, "2": 0.7},
+	}
+	require.Equal(t, 0.1, numericScore.Probability("1"))
+	require.Equal(t, 0.7, numericScore.Probability("3"))
+	require.Equal(t, 0.0, numericScore.Probability("0"))
+
+	scoreWithoutLegend := DecisionAnswer{
+		Type:          DecisionScore,
+		Probabilities: map[string]float64{"0": 0.2, "1": 0.8},
+	}
+	require.Equal(t, 0.8, scoreWithoutLegend.Probability("1"))
+	require.Equal(t, 0.0, scoreWithoutLegend.Probability("high"))
+
+	noul := DecisionAnswer{Type: DecisionNoul, Noul: 0.86}
+	require.Equal(t, 0.0, noul.Probability("yes"))
+}

@@ -38,7 +38,9 @@ type DecisionOption struct {
 }
 
 // DecisionQuestion is one question keyed by name in [DecisionOption.Questions].
-// Build it with [NoulQuestion], [ChoiceQuestion], or [ScoreQuestion].
+// Build it with [NoulQuestion], [ChoiceQuestion], or [ScoreQuestion]. Score
+// criteria must be plain strings: the API echoes them back as
+// [DecisionAnswer.Legend] values, which decode only as strings.
 type DecisionQuestion struct {
 	Type         DecisionQuestionType `json:"type"`
 	Instructions string               `json:"instructions"`
@@ -70,7 +72,8 @@ type DecisionResponse struct {
 }
 
 // DecisionAnswer is a typed answer; Type selects which of Noul, Choice, or
-// Score is populated. Probabilities and Confidence are absent for noul.
+// Score is populated. Fields that do not apply to Type are zero, including
+// Confidence for noul, so check Type before reading them.
 type DecisionAnswer struct {
 	Type          DecisionQuestionType `json:"type"`
 	Noul          float64              `json:"noul"`
@@ -79,6 +82,23 @@ type DecisionAnswer struct {
 	Legend        map[string]string    `json:"legend,omitempty"`
 	Probabilities map[string]float64   `json:"probabilities,omitempty"`
 	Confidence    float64              `json:"confidence"`
+}
+
+// Probability returns the probability of a choice option or score level.
+// When Legend is present, label is matched against level names only, so
+// numeric level names never collide with index keys; without Legend, label is
+// used as the Probabilities key directly. It returns 0 for unknown labels and
+// for noul answers.
+func (a DecisionAnswer) Probability(label string) float64 {
+	if len(a.Legend) == 0 {
+		return a.Probabilities[label]
+	}
+	for idx, name := range a.Legend {
+		if name == label {
+			return a.Probabilities[idx]
+		}
+	}
+	return 0
 }
 
 func (s *Service) Decide(ctx context.Context, opt DecisionOption) (DecisionResponse, error) {
