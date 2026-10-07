@@ -38,7 +38,9 @@ type DecisionOption struct {
 }
 
 // DecisionQuestion is one question keyed by name in [DecisionOption.Questions].
-// Build it with [NoulQuestion], [ChoiceQuestion], or [ScoreQuestion].
+// Build it with [NoulQuestion], [ChoiceQuestion], or [ScoreQuestion]. Score
+// criteria must be plain strings: the API echoes them back as
+// [DecisionAnswer.Legend] values, which decode only as strings.
 type DecisionQuestion struct {
 	Type         DecisionQuestionType `json:"type"`
 	Instructions string               `json:"instructions"`
