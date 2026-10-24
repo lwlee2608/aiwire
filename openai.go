@@ -27,11 +27,14 @@ type Service struct {
 
 // NewOpenAIService returns a Service pointed at baseUrl authenticated with apiKey.
 // baseUrl may target OpenAI, OpenRouter, or any compatible endpoint.
-func NewOpenAIService(apiKey string, baseUrl string) *Service {
-	client := openai.NewClient(
+// opts are applied to the underlying client, e.g. option.WithMaxRetries(0) so a
+// caller with its own failover is not held by the client's built-in retries,
+// which sleep on Retry-After without watching the request context.
+func NewOpenAIService(apiKey string, baseUrl string, opts ...option.RequestOption) *Service {
+	client := openai.NewClient(append([]option.RequestOption{
 		option.WithAPIKey(apiKey),
 		option.WithBaseURL(baseUrl),
-	)
+	}, opts...)...)
 	return &Service{
 		client: client,
 	}

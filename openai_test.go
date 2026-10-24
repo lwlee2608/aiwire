@@ -8,8 +8,10 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/openai/openai-go/v3"
+	"github.com/openai/openai-go/v3/option"
 	"github.com/openai/openai-go/v3/packages/respjson"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -386,4 +388,29 @@ func TestCompletionsFillsEmptyToolArguments(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, streamed, 1)
 	assert.Equal(t, "{}", streamed[0].Function.Arguments)
+}
+
+func TestNewOpenAIServiceAppliesClientOptions(t *testing.T) {
+	var attempts int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		w.Header().Set("Retry-After", "30")
+		w.WriteHeader(http.StatusTooManyRequests)
+		_, _ = w.Write([]byte(`{"error":{"message":"rate limited"}}`))
+	}))
+	defer server.Close()
+
+	start := time.Now()
+	_, err := NewOpenAIService("test-key", server.URL, option.WithMaxRetries(0)).Completions(
+		context.Background(),
+		[]openai.ChatCompletionMessageParamUnion{openai.UserMessage("test")},
+		nil,
+		CompletionOption{Model: "test-model"},
+	)
+
+	var apiErr *openai.Error
+	require.ErrorAs(t, err, &apiErr)
+	assert.Equal(t, http.StatusTooManyRequests, apiErr.StatusCode)
+	assert.Equal(t, 1, attempts)
+	assert.Less(t, time.Since(start), 5*time.Second)
 }
