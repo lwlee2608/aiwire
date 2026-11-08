@@ -210,6 +210,19 @@ type cityInput struct {
 }
 
 func TestAgent_Execute_ParallelTools(t *testing.T) {
+	gptOption := aiwire.CompletionOption{
+		Model:           "openai/gpt-6.1-terra",
+		OmitTemperature: true,
+		Reasoning:       &aiwire.ReasoningOption{Effort: aiwire.ReasoningEffortLow},
+	}
+	for _, option := range []aiwire.CompletionOption{testCompletionOption(), gptOption} {
+		t.Run(option.Model, func(t *testing.T) {
+			runParallelToolsTest(t, option)
+		})
+	}
+}
+
+func runParallelToolsTest(t *testing.T, option aiwire.CompletionOption) {
 	agent := newTestAgent(t)
 	tools := []aiwire.Tool{
 		&slowLookupTool{name: "get_weather", value: "sunny, 24C"},
@@ -224,7 +237,7 @@ func TestAgent_Execute_ParallelTools(t *testing.T) {
 	var mu sync.Mutex
 	var events []string
 	var firstPre, lastPost time.Time
-	result, err := agent.Execute(context.Background(), messages, tools, testCompletionOption(),
+	result, err := agent.Execute(context.Background(), messages, tools, option,
 		func(p aiwire.PreTool) {
 			mu.Lock()
 			defer mu.Unlock()
