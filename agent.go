@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"runtime/debug"
 
 	"github.com/openai/openai-go/v3"
 )
@@ -12,6 +13,11 @@ import (
 // ErrMaxStepsExceeded is returned by Agent.Execute / Agent.ExecuteStream when
 // the loop hits maxSteps without the model producing a final tool-free answer.
 var ErrMaxStepsExceeded = errors.New("max steps exceeded")
+
+// ErrToolPanic is wrapped by the ToolResult error of a tool call whose Execute
+// panicked. The wrapping error holds the panic value and stack; the model only
+// sees a short message.
+var ErrToolPanic = errors.New("tool panicked")
 
 // ToolResult is the value returned by a Tool.Execute call. Content is the
 // string fed back to the model; Error is informational and does not abort the loop.
@@ -105,14 +111,30 @@ func (a *Agent) executeToolCall(
 		return
 	}
 
-	toolResult, err = tool.Execute(ctx, args)
-	if err != nil {
+	toolResult, panicked, err := runTool(ctx, tool, args)
+	if panicked {
+		toolResult = &SimpleToolResult{
+			ToolContent: fmt.Sprintf("Tool %s crashed", toolCall.Function.Name),
+			ToolError:   err,
+		}
+	} else if err != nil {
 		toolResult = &SimpleToolResult{
 			ToolContent: fmt.Sprintf("Error executing tool %s: %v", toolCall.Function.Name, err),
 			ToolError:   err,
 		}
 	}
 	toolMsg = openai.ToolMessage(toolResult.Content(), toolCall.ID)
+	return
+}
+
+func runTool(ctx context.Context, tool Tool, args map[string]any) (result ToolResult, panicked bool, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			result, panicked = nil, true
+			err = fmt.Errorf("%w: %v\n%s", ErrToolPanic, r, debug.Stack())
+		}
+	}()
+	result, err = tool.Execute(ctx, args)
 	return
 }
 
