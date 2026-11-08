@@ -127,21 +127,23 @@ func (a *Agent) runsParallel(toolCalls []openai.ChatCompletionMessageToolCallUni
 	if !a.parallelTools || len(toolCalls) < 2 {
 		return false
 	}
+	anyConcurrent := false
 	for _, toolCall := range toolCalls {
 		tool, ok := toolsMap[toolCall.Function.Name]
 		if !ok {
 			continue
 		}
-		if ct, ok := tool.(ConcurrentTool); ok && ct.Concurrent() {
-			continue
-		}
 		var args map[string]any
-		if json.Unmarshal([]byte(toolCall.Function.Arguments), &args) != nil {
+		argsOK := json.Unmarshal([]byte(toolCall.Function.Arguments), &args) == nil
+		if ct, ok := tool.(ConcurrentTool); ok && ct.Concurrent() {
+			anyConcurrent = anyConcurrent || argsOK
 			continue
 		}
-		return false
+		if argsOK {
+			return false
+		}
 	}
-	return true
+	return anyConcurrent
 }
 
 func (a *Agent) executeToolCall(
@@ -177,6 +179,12 @@ func (a *Agent) executeToolCall(
 		return &SimpleToolResult{
 			ToolContent: fmt.Sprintf("Error executing tool %s: %v", toolCall.Function.Name, err),
 			ToolError:   err,
+		}, duration
+	}
+	if toolResult == nil {
+		return &SimpleToolResult{
+			ToolContent: fmt.Sprintf("Tool %s returned no result", toolCall.Function.Name),
+			ToolError:   fmt.Errorf("tool %s returned a nil result", toolCall.Function.Name),
 		}, duration
 	}
 	return toolResult, duration

@@ -14,6 +14,7 @@ import (
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/shared"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 type addInput struct {
@@ -241,9 +242,9 @@ func TestAgent_Execute_ParallelTools(t *testing.T) {
 		},
 	)
 
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Len(t, result.ToolCalls, 3)
-	assert.Len(t, events, 6)
+	require.Len(t, events, 6)
 	for _, e := range events[:3] {
 		assert.True(t, strings.HasPrefix(e, "pre:"), "expected all three calls in one step, got %v", events)
 	}

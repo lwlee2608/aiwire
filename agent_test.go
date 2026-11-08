@@ -336,6 +336,34 @@ func TestAgent_UnknownAndBadArgsCountAsSafe(t *testing.T) {
 	assert.Equal(t, "ok", result.ToolResults[3].Content())
 }
 
+func TestAgent_NoConcurrentToolRunsSerial(t *testing.T) {
+	log := &eventLog{}
+	unmarked := newTool("unmarked", false, func(context.Context, map[string]any) (ToolResult, error) {
+		return &SimpleToolResult{ToolContent: "should not run"}, nil
+	})
+	svc := &fakeCompletion{steps: [][]openai.ChatCompletionMessageToolCallUnion{{
+		call("c1", "missing", `{}`),
+		call("c2", "unmarked", `not json`),
+	}}}
+	rec := &recorder{log: log}
+
+	_, err := NewAgent(svc, 5).Execute(context.Background(), nil, []Tool{unmarked}, CompletionOption{}, rec.preCb, rec.postCb)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"pre:c1", "post:c1", "pre:c2", "post:c2"}, log.list())
+}
+
+func TestAgent_NilToolResultBecomesError(t *testing.T) {
+	tool := newTool("t1", false, func(context.Context, map[string]any) (ToolResult, error) {
+		return nil, nil
+	})
+	svc := &fakeCompletion{steps: [][]openai.ChatCompletionMessageToolCallUnion{{call("c1", "t1", `{}`)}}}
+
+	result, err := NewAgent(svc, 5).Execute(context.Background(), nil, []Tool{tool}, CompletionOption{}, nil, nil)
+	require.NoError(t, err)
+	require.Len(t, result.ToolResults, 1)
+	assert.Error(t, result.ToolResults[0].Error())
+}
+
 func TestAgent_ParallelCancelReachesTools(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
