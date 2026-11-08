@@ -11,6 +11,7 @@ A Go library for building AI agents with tool-calling support. Works with any Op
 - Simple completion and streaming APIs
 - Agentic loop with automatic tool execution
 - Pre/post tool callbacks for observability
+- Parallel execution of concurrent-safe tool calls within a step
 - Token usage tracking across multi-step interactions
 - Provider-agnostic via the `Completion` interface
 - Image generation and editing via a separate `ImageGeneration` interface (OpenRouter)
@@ -41,6 +42,30 @@ streaming, tool calls, structured outputs, and extended thinking. Message
 content is text-only — image and file parts are rejected — and model listing is
 not available. Thinking control differs by model generation; see
 [docs/reasoning.md](docs/reasoning.md).
+
+## Parallel tool calls
+
+When the model calls several tools in one step, the agent runs them at the
+same time if every called tool implements `ConcurrentTool` and returns `true`.
+`Concurrent() == true` means the tool is safe to run alongside any call,
+including another call to itself. A step with any unmarked tool runs one call
+at a time, as before.
+
+```go
+func (t *searchTool) Concurrent() bool { return true }
+
+agent := aiwire.NewAgent(service, 10)                                   // parallel on (default)
+serial := aiwire.NewAgent(service, 10, aiwire.WithParallelTools(false)) // always serial
+```
+
+Results, tool messages, `ToolCalls` and `ToolResults` stay in the model's call
+order, and callbacks are never called concurrently. In a parallel step every
+`PreTool` fires before any `PostTool`, so a post no longer follows its own pre:
+pair them by `ID` and time calls with `PostTool.Duration`.
+
+A tool that panics no longer unwinds out of `Execute`. The model gets a short
+"Tool <name> crashed" result and the loop continues; `PostTool.Result.Error()`
+wraps `ErrToolPanic` with the panic value and stack.
 
 ## Experimental: Responses API
 
