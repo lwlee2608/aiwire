@@ -5,7 +5,10 @@ package integration
 import (
 	"context"
 	"fmt"
+	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/lwlee2608/aiwire"
 	"github.com/openai/openai-go/v3"
@@ -172,5 +175,82 @@ func TestAgent_Execute_ReasoningReplay_GPT55(t *testing.T) {
 
 	t.Logf("Content: %s", result.Content)
 	t.Logf("Provider: %s", result.Provider)
+	logUsage(t, result.Usage)
+}
+
+type slowLookupTool struct {
+	name  string
+	value string
+}
+
+var _ aiwire.ConcurrentTool = (*slowLookupTool)(nil)
+
+func (t *slowLookupTool) Definition() openai.ChatCompletionToolUnionParam {
+	return openai.ChatCompletionFunctionTool(shared.FunctionDefinitionParam{
+		Name:        t.name,
+		Description: openai.String("Look up the current " + strings.TrimPrefix(t.name, "get_") + " for a city"),
+		Parameters:  aiwire.GenerateFunctionParameters[cityInput](),
+	})
+}
+
+func (t *slowLookupTool) Execute(ctx context.Context, _ map[string]any) (aiwire.ToolResult, error) {
+	select {
+	case <-time.After(time.Second):
+		return &aiwire.SimpleToolResult{ToolContent: t.value}, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+func (t *slowLookupTool) Concurrent() bool { return true }
+
+type cityInput struct {
+	City string `json:"city" jsonschema:"required"`
+}
+
+func TestAgent_Execute_ParallelTools(t *testing.T) {
+	agent := newTestAgent(t)
+	tools := []aiwire.Tool{
+		&slowLookupTool{name: "get_weather", value: "sunny, 24C"},
+		&slowLookupTool{name: "get_time", value: "14:05"},
+		&slowLookupTool{name: "get_population", value: "5.9 million"},
+	}
+	messages := []openai.ChatCompletionMessageParamUnion{
+		openai.SystemMessage("Call every tool you need in a single response, in parallel."),
+		openai.UserMessage("For Singapore, what is the weather, the local time, and the population? Call get_weather, get_time and get_population at once."),
+	}
+
+	var mu sync.Mutex
+	var events []string
+	var firstPre, lastPost time.Time
+	result, err := agent.Execute(context.Background(), messages, tools, testCompletionOption(),
+		func(p aiwire.PreTool) {
+			mu.Lock()
+			defer mu.Unlock()
+			if firstPre.IsZero() {
+				firstPre = time.Now()
+			}
+			events = append(events, "pre:"+p.ID)
+		},
+		func(p aiwire.PostTool) {
+			mu.Lock()
+			defer mu.Unlock()
+			lastPost = time.Now()
+			events = append(events, "post:"+p.ID)
+			t.Logf("%s (%s) took %s", p.Name, p.ID, p.Duration)
+		},
+	)
+
+	assert.NoError(t, err)
+	assert.Len(t, result.ToolCalls, 3)
+	assert.Len(t, events, 6)
+	for _, e := range events[:3] {
+		assert.True(t, strings.HasPrefix(e, "pre:"), "expected all three calls in one step, got %v", events)
+	}
+	toolPhase := lastPost.Sub(firstPre)
+	assert.Less(t, toolPhase, 2*time.Second, "step should take about the slowest tool (1s), not the sum (3s)")
+
+	t.Logf("Tool phase: %s", toolPhase)
+	t.Logf("Content: %s", result.Content)
 	logUsage(t, result.Usage)
 }
